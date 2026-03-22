@@ -1,0 +1,46 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build universal release binary
+        run: swift build -c release --arch arm64 --arch x86_64
+
+      - name: Resolve version from tag
+        id: meta
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Package universal binary
+        run: |
+          set -euo pipefail
+          BUILD_DIR=".build/apple/Products/Release"
+          STAGE_DIR="${RUNNER_TEMP}/release-stage"
+          mkdir -p "${STAGE_DIR}"
+
+          cp "${BUILD_DIR}/LabTetherAgent" "${STAGE_DIR}/labtether-agent-macos"
+          chmod +x "${STAGE_DIR}/labtether-agent-macos"
+
+          cd "${STAGE_DIR}"
+          tar czf "labtether-agent-macos-universal.tar.gz" "labtether-agent-macos"
+          shasum -a 256 "labtether-agent-macos-universal.tar.gz" > "labtether-agent-macos-universal.tar.gz.sha256"
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "LabTether Mac Agent ${{ steps.meta.outputs.version }}"
+          files: |
+            ${{ runner.temp }}/release-stage/labtether-agent-macos-universal.tar.gz
+            ${{ runner.temp }}/release-stage/labtether-agent-macos-universal.tar.gz.sha256
