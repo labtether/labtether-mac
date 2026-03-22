@@ -1,19 +1,19 @@
 # LabTether macOS Agent
 
-The macOS menu bar agent for [LabTether](https://labtether.com) — reports telemetry, executes actions, and enables remote access for your Mac.
+A menu bar app that connects your Mac to your [LabTether](https://labtether.com) hub — telemetry, remote access, and actions without leaving the menu bar.
 
 ## Install
 
-Download **LabTether Agent.app** from [Releases](https://github.com/labtether/labtether-mac/releases/latest), drag it to Applications, and launch. The menu bar icon guides you through hub enrollment.
+Download **LabTether Agent.app** from [Releases](https://github.com/labtether/labtether-mac/releases/latest), drag to Applications, and launch. The menu bar icon walks you through hub enrollment.
 
-For detailed setup, see the [agent setup guide](https://labtether.com/docs/wiki/agents/macos).
+For detailed setup, see the [full guide](https://labtether.com/docs/wiki/agents/macos).
 
 ## What It Does
 
-- **System telemetry** — CPU, memory, disk, network, and temperature reported to your hub.
-- **Remote access** — Terminal and desktop sessions from the LabTether console.
+- **System telemetry** — CPU, memory, disk, network, and temperature. Reported every heartbeat.
+- **Remote terminal & desktop** — Open a shell or desktop session from the LabTether console. No VNC clients needed.
 - **Menu bar status** — Connection state, alerts, and quick actions at a glance.
-- **Service management** — Monitor and manage launchd services remotely.
+- **Service management** — Monitor and manage launchd services from the dashboard.
 - **Notifications** — Native macOS alerts for hub events.
 
 ## Build From Source
@@ -24,15 +24,17 @@ Requires Xcode with Swift 5.9+ and macOS 13+ deployment target.
 swift build
 ```
 
-The Mac agent bundles the Go `labtether-agent` binary. See `AGENT_VERSION` for the pinned version.
+The Mac agent bundles the Go `labtether-agent` binary. See `AGENT_VERSION` for the pinned release.
 
-For most users, download the pre-built app from [Releases](https://github.com/labtether/labtether-mac/releases/latest) instead.
+Most users should grab the pre-built app from [Releases](https://github.com/labtether/labtether-mac/releases/latest).
 
 ## Links
 
-- **LabTether Hub** — [github.com/labtether/labtether](https://github.com/labtether/labtether)
-- **Documentation** — [labtether.com/docs](https://labtether.com/docs)
-- **Website** — [labtether.com](https://labtether.com)
+| | |
+|---|---|
+| **LabTether Hub** | [github.com/labtether/labtether](https://github.com/labtether/labtether) |
+| **Docs** | [labtether.com/docs](https://labtether.com/docs) |
+| **Website** | [labtether.com](https://labtether.com) |
 
 ## License
 
