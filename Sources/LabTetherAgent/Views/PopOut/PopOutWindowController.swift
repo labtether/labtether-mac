@@ -107,8 +107,8 @@ final class PopOutWindowController: ObservableObject {
             forName: NSWindow.willCloseNotification,
             object: panel,
             queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
+        ) { _ in
+            Task { @MainActor [weak self] in
                 if let closeObserver = self?.closeObserver {
                     NotificationCenter.default.removeObserver(closeObserver)
                     self?.closeObserver = nil
