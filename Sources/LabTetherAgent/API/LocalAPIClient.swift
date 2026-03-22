@@ -324,7 +324,7 @@ final class LocalAPIClient: ObservableObject {
     private func scheduleNextPoll() {
         statusTimer?.invalidate()
         statusTimer = Timer.scheduledTimer(withTimeInterval: effectiveInterval, repeats: false) { [weak self] _ in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 self?.poll()
                 self?.scheduleNextPoll()
             }
@@ -348,7 +348,7 @@ final class LocalAPIClient: ObservableObject {
                 return
             }
             guard path.status == .satisfied else { return }
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 guard let self, self.isPolling else { return }
                 self.consecutiveFailures = 0
                 self.poll()

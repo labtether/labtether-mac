@@ -136,7 +136,7 @@ struct MenuBarView: View {
         }
     }
 
-    private func openDevicePage() {
+    @MainActor private func openDevicePage() {
         if let base = settings.consoleURL {
             let deviceURL = base.appendingPathComponent("nodes/\(status.assetID)")
             NSWorkspace.shared.open(deviceURL)
@@ -147,7 +147,7 @@ struct MenuBarView: View {
         openWindow(id: "log-viewer")
     }
 
-    private func copyDiagnostics() {
+    @MainActor private func copyDiagnostics() {
         let logSummary = DiagnosticsLogSummary(logLines: logBuffer.logLines)
         let report = DiagnosticsCollector.collect(
             appVersion: BundleHelper.appVersion,

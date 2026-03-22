@@ -121,7 +121,7 @@ final class ScreenSharingMonitor: ObservableObject {
     private func scheduleTimer() {
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: currentCheckInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.check() }
+            Task { @MainActor [weak self] in self?.check() }
         }
     }
 

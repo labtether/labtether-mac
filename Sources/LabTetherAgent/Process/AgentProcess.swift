@@ -151,7 +151,7 @@ final class AgentProcess: ObservableObject {
 
         // Handle process termination
         proc.terminationHandler = { [weak self] proc in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 guard let self = self else { return }
                 let previousState = self.status.state
                 let wasUserStop = self.userInitiatedStop
@@ -205,14 +205,14 @@ final class AgentProcess: ObservableObject {
         // Read stdout in background — handler receives all lines from a single
         // availableData read, dispatched in one Task to reduce allocations.
         readPipe(stdout) { [weak self] lines in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.handleParsedLines(lines)
             }
         }
         // Read stderr in background (Go logs to stderr by default)
         readPipe(stderr) { [weak self] lines in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.handleParsedLines(lines)
             }
