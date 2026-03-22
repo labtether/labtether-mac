@@ -1,0 +1,98 @@
+/* Status */
+"status.connected" = "Connected";
+"status.disconnected" = "Disconnected";
+"status.connecting" = "Connecting";
+"status.starting" = "Starting";
+"status.stopped" = "Stopped";
+"status.error" = "Error";
+"status.reconnecting" = "Reconnecting";
+"status.enrolling" = "Enrolling";
+"status.auth_failed" = "Auth Failed";
+"status.unavailable" = "Status Unavailable";
+
+/* Menu Bar Quick Actions */
+"menu.open_console" = "Open Web Console";
+"menu.view_device" = "View This Device";
+"menu.pop_out" = "Pop Out Window";
+"menu.view_logs" = "View Logs";
+"menu.copy_diagnostics" = "Copy Diagnostics";
+"menu.test_connection" = "Test Connection";
+"menu.settings" = "Settings";
+
+/* Menu Bar Footer */
+"menu.about" = "About";
+"menu.setup_wizard" = "Setup Wizard";
+"menu.uninstall" = "Reset & Uninstall...";
+
+/* Settings Tabs */
+"settings.connection" = "Connection";
+"settings.security" = "Security";
+"settings.advanced" = "Advanced";
+
+/* Settings Connection */
+"settings.hub_url" = "HUB URL";
+"settings.api_token" = "API TOKEN";
+"settings.enrollment_token" = "ENROLLMENT TOKEN";
+"settings.asset_id" = "ASSET ID";
+"settings.group_id" = "GROUP ID";
+"settings.test_connection" = "Test Connection";
+"settings.full_diagnostics" = "Full Diagnostics...";
+"settings.start" = "Start";
+"settings.stop" = "Stop";
+"settings.restart" = "Restart";
+"settings.restart_required" = "Restart Required";
+
+/* Onboarding */
+"onboarding.welcome_title" = "Welcome to LabTether";
+"onboarding.welcome_subtitle" = "Connect this Mac to your LabTether hub\nfor remote management.";
+"onboarding.auth_title" = "Authentication";
+"onboarding.auth_subtitle" = "Use an enrollment token to register this device,\nor an API token if already enrolled.";
+"onboarding.identity_title" = "Identity (Optional)";
+"onboarding.identity_subtitle" = "Set an asset ID and group, or leave blank\nfor automatic detection.";
+"onboarding.next" = "Next";
+"onboarding.back" = "Back";
+"onboarding.finish" = "Finish & Start Agent";
+"onboarding.skip" = "Skip";
+"onboarding.paste_clipboard" = "Paste from Clipboard";
+
+/* About */
+"about.title" = "LabTether Agent";
+"about.version" = "Version";
+"about.agent" = "Agent:";
+"about.not_running" = "Not running";
+"about.website" = "Website";
+"about.documentation" = "Documentation";
+"about.support" = "Support";
+
+/* Session History */
+"session.title" = "SESSION HISTORY";
+"session.empty" = "No sessions recorded yet";
+"session.clear" = "Clear History";
+"session.clear_title" = "Clear Session History?";
+"session.clear_message" = "This will remove all recorded session events.";
+"session.today" = "Today";
+"session.yesterday" = "Yesterday";
+
+/* Bandwidth */
+"bandwidth.title" = "BANDWIDTH";
+"bandwidth.this_session" = "This Session";
+"bandwidth.today" = "Today";
+"bandwidth.last_30_days" = "Last 30 Days";
+"bandwidth.empty" = "Bandwidth data will appear after the agent runs for a while";
+
+/* Connection Diagnostics */
+"diagnostics.title" = "Connection Diagnostics";
+"diagnostics.run" = "Run";
+"diagnostics.rerun" = "Re-run";
+"diagnostics.close" = "Close";
+"diagnostics.copy_results" = "Copy Results";
+"diagnostics.dns" = "DNS Resolution";
+"diagnostics.tcp" = "TCP Connection";
+"diagnostics.tls" = "TLS Handshake";
+"diagnostics.http" = "HTTP Reachability";
+
+/* Uninstall */
+"uninstall.title" = "Uninstall LabTether Agent?";
+"uninstall.message" = "This will remove all configuration, credentials, and history. The app will quit.";
+"uninstall.confirm" = "Uninstall & Quit";
+"uninstall.cancel" = "Cancel";

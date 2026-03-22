@@ -1,0 +1,98 @@
+/* Status */
+"status.connected" = "Conectado";
+"status.disconnected" = "Desconectado";
+"status.connecting" = "Conectando";
+"status.starting" = "Iniciando";
+"status.stopped" = "Detenido";
+"status.error" = "Error";
+"status.reconnecting" = "Reconectando";
+"status.enrolling" = "Inscribiendo";
+"status.auth_failed" = "Autenticación fallida";
+"status.unavailable" = "Estado no disponible";
+
+/* Menu Bar Quick Actions */
+"menu.open_console" = "Abrir consola web";
+"menu.view_device" = "Ver este dispositivo";
+"menu.pop_out" = "Ventana emergente";
+"menu.view_logs" = "Ver registros";
+"menu.copy_diagnostics" = "Copiar diagnósticos";
+"menu.test_connection" = "Probar conexión";
+"menu.settings" = "Configuración";
+
+/* Menu Bar Footer */
+"menu.about" = "Acerca de";
+"menu.setup_wizard" = "Asistente de configuración";
+"menu.uninstall" = "Restablecer y desinstalar...";
+
+/* Settings Tabs */
+"settings.connection" = "Conexión";
+"settings.security" = "Seguridad";
+"settings.advanced" = "Avanzado";
+
+/* Settings Connection */
+"settings.hub_url" = "URL DEL HUB";
+"settings.api_token" = "TOKEN DE API";
+"settings.enrollment_token" = "TOKEN DE INSCRIPCIÓN";
+"settings.asset_id" = "ID DE ACTIVO";
+"settings.group_id" = "ID DE GRUPO";
+"settings.test_connection" = "Probar conexión";
+"settings.full_diagnostics" = "Diagnósticos completos...";
+"settings.start" = "Iniciar";
+"settings.stop" = "Detener";
+"settings.restart" = "Reiniciar";
+"settings.restart_required" = "Reinicio requerido";
+
+/* Onboarding */
+"onboarding.welcome_title" = "Bienvenido a LabTether";
+"onboarding.welcome_subtitle" = "Conecta este Mac a tu hub de LabTether\npara gestión remota.";
+"onboarding.auth_title" = "Autenticación";
+"onboarding.auth_subtitle" = "Usa un token de inscripción para registrar este dispositivo,\no un token de API si ya está inscrito.";
+"onboarding.identity_title" = "Identidad (Opcional)";
+"onboarding.identity_subtitle" = "Establece un ID de activo y grupo, o déjalo en blanco\npara detección automática.";
+"onboarding.next" = "Siguiente";
+"onboarding.back" = "Atrás";
+"onboarding.finish" = "Finalizar e iniciar agente";
+"onboarding.skip" = "Omitir";
+"onboarding.paste_clipboard" = "Pegar del portapapeles";
+
+/* About */
+"about.title" = "Agente LabTether";
+"about.version" = "Versión";
+"about.agent" = "Agente:";
+"about.not_running" = "No ejecutándose";
+"about.website" = "Sitio web";
+"about.documentation" = "Documentación";
+"about.support" = "Soporte";
+
+/* Session History */
+"session.title" = "HISTORIAL DE SESIONES";
+"session.empty" = "No se han registrado sesiones aún";
+"session.clear" = "Borrar historial";
+"session.clear_title" = "¿Borrar historial de sesiones?";
+"session.clear_message" = "Esto eliminará todos los eventos de sesión registrados.";
+"session.today" = "Hoy";
+"session.yesterday" = "Ayer";
+
+/* Bandwidth */
+"bandwidth.title" = "ANCHO DE BANDA";
+"bandwidth.this_session" = "Esta sesión";
+"bandwidth.today" = "Hoy";
+"bandwidth.last_30_days" = "Últimos 30 días";
+"bandwidth.empty" = "Los datos de ancho de banda aparecerán después de que el agente se ejecute por un tiempo";
+
+/* Connection Diagnostics */
+"diagnostics.title" = "Diagnósticos de conexión";
+"diagnostics.run" = "Ejecutar";
+"diagnostics.rerun" = "Re-ejecutar";
+"diagnostics.close" = "Cerrar";
+"diagnostics.copy_results" = "Copiar resultados";
+"diagnostics.dns" = "Resolución DNS";
+"diagnostics.tcp" = "Conexión TCP";
+"diagnostics.tls" = "Negociación TLS";
+"diagnostics.http" = "Accesibilidad HTTP";
+
+/* Uninstall */
+"uninstall.title" = "¿Desinstalar agente LabTether?";
+"uninstall.message" = "Esto eliminará toda la configuración, credenciales e historial. La aplicación se cerrará.";
+"uninstall.confirm" = "Desinstalar y salir";
+"uninstall.cancel" = "Cancelar";
