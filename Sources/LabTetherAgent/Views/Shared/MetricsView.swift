@@ -89,7 +89,7 @@ struct MetricsView: View {
                         .font(.system(size: 9, weight: .medium))
                         .foregroundStyle(tempColor)
                     VStack(alignment: .leading, spacing: 0) {
-                        Text("TEMP")
+                        Text("THERM")
                             .font(LT.mono(8, weight: .semibold))
                             .foregroundStyle(LT.textMuted)
                             .tracking(0.5)
@@ -145,7 +145,7 @@ struct MetricsLoadingView: View {
             Spacer()
             networkCell(label: "TX")
             Spacer()
-            networkCell(label: "TEMP")
+            networkCell(label: "THERM")
         }
         .padding(.top, 2)
     }

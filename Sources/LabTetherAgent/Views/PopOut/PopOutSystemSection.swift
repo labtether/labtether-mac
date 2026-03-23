@@ -107,7 +107,7 @@ struct PopOutSystemSection: View {
                         .frame(width: 0.5, height: 28)
 
                     networkStatCell(
-                        label: "TEMP",
+                        label: "THERM",
                         icon: "thermometer.medium",
                         value: tempText,
                         color: MetricGaugePresentation.thresholdColor(for: tempValue)
@@ -178,7 +178,7 @@ struct PopOutSystemSection: View {
                             )
                         )
                         .frame(width: 0.5, height: 28)
-                    loadingNetworkStatCell(label: "TEMP")
+                    loadingNetworkStatCell(label: "THERM")
                     Spacer()
                 }
             }
