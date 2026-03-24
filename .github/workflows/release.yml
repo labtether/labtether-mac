@@ -23,6 +23,38 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
+      # --- Code signing & notarization (requires Apple Developer ID) ---
+      # Uncomment when APPLE_CERTIFICATE_P12, APPLE_CERTIFICATE_PASSWORD,
+      # APPLE_ID, APPLE_TEAM_ID, and APPLE_APP_PASSWORD secrets are configured.
+      #
+      # - name: Import code signing certificate
+      #   env:
+      #     CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+      #     CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      #   run: |
+      #     echo "$CERTIFICATE_P12" | base64 --decode > certificate.p12
+      #     security create-keychain -p "" build.keychain
+      #     security import certificate.p12 -k build.keychain -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+      #     security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" build.keychain
+      #     security default-keychain -s build.keychain
+      #
+      # - name: Sign binary
+      #   run: |
+      #     codesign --force --options runtime --sign "Developer ID Application: YOUR_TEAM_NAME" \
+      #       --timestamp "LabTether Agent.app"
+      #
+      # - name: Notarize
+      #   env:
+      #     APPLE_ID: ${{ secrets.APPLE_ID }}
+      #     APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      #     APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+      #   run: |
+      #     ditto -c -k "LabTether Agent.app" "LabTether Agent.zip"
+      #     xcrun notarytool submit "LabTether Agent.zip" \
+      #       --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+      #       --password "$APPLE_APP_PASSWORD" --wait
+      #     xcrun stapler staple "LabTether Agent.app"
+
       - name: Package universal binary
         run: |
           set -euo pipefail
