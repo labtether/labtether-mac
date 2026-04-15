@@ -1,3 +1,9 @@
+<div align="center">
+
+<img src=".github/logo.svg" alt="LabTether" width="80" />
+
+</div>
+
 # LabTether macOS Agent
 
 A native menu bar app that connects your Mac to your [LabTether](https://labtether.com) hub -- telemetry, remote access, and actions without leaving the menu bar.
