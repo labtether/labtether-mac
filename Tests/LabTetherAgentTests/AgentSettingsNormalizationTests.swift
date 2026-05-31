@@ -56,6 +56,24 @@ final class AgentSettingsNormalizationTests: XCTestCase {
         XCTAssertNil(AgentSettingsNormalization.normalizedPortList("80,99999"))
     }
 
+    func testStrictDecimalIntegerRejectsSignedAndMalformedValues() {
+        XCTAssertEqual(AgentSettingsNormalization.strictDecimalInteger("0005", in: 1...10), 5)
+        XCTAssertNil(AgentSettingsNormalization.strictDecimalInteger("+5", in: 1...10))
+        XCTAssertNil(AgentSettingsNormalization.strictDecimalInteger("-5", in: 1...10))
+        XCTAssertNil(AgentSettingsNormalization.strictDecimalInteger("1e3", in: 1...10_000))
+        XCTAssertNil(AgentSettingsNormalization.strictDecimalInteger("30abc", in: 1...10_000))
+        XCTAssertNil(AgentSettingsNormalization.strictDecimalInteger("１２", in: 1...100))
+    }
+
+    func testPortListRejectsSignedAndMalformedPorts() {
+        XCTAssertNil(AgentSettingsNormalization.normalizedPortList("+443,80"))
+        XCTAssertNil(AgentSettingsNormalization.normalizedPortList("443,80abc"))
+        XCTAssertEqual(
+            AgentSettingsNormalization.portListValidationError("+443"),
+            "must contain only TCP ports between 1 and 65535."
+        )
+    }
+
     func testCIDRNormalizationAndValidation() {
         XCTAssertEqual(
             AgentSettingsNormalization.normalizedCIDRList("192.168.1.5/24,10.0.0.3/8,192.168.1.0/24"),
@@ -67,6 +85,10 @@ final class AgentSettingsNormalizationTests: XCTestCase {
         )
         XCTAssertEqual(
             AgentSettingsNormalization.cidrListValidationError("not-a-cidr"),
+            "must contain valid CIDR values."
+        )
+        XCTAssertEqual(
+            AgentSettingsNormalization.cidrListValidationError("192.168.1.0/+24"),
             "must contain valid CIDR values."
         )
     }

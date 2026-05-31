@@ -2,6 +2,22 @@ import Foundation
 import Network
 
 enum AgentSettingsNormalization {
+    static func strictDecimalInteger(_ raw: String) -> Int? {
+        let token = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else { return nil }
+        guard token.utf8.allSatisfy({ byte in byte >= 48 && byte <= 57 }) else {
+            return nil
+        }
+        return Int(token)
+    }
+
+    static func strictDecimalInteger(_ raw: String, in range: ClosedRange<Int>) -> Int? {
+        guard let value = strictDecimalInteger(raw), range.contains(value) else {
+            return nil
+        }
+        return value
+    }
+
     static func canonicalHubWebSocketURL(from raw: String) -> String? {
         var candidate = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if candidate.isEmpty {
@@ -80,7 +96,7 @@ enum AgentSettingsNormalization {
         var seen = Set<Int>()
         var ports: [Int] = []
         for token in tokens {
-            guard let port = Int(token), (1...65535).contains(port) else {
+            guard let port = strictDecimalInteger(token, in: 1...65535) else {
                 return nil
             }
             if seen.contains(port) {
@@ -99,7 +115,7 @@ enum AgentSettingsNormalization {
             return nil
         }
         for token in tokens {
-            guard let port = Int(token), (1...65535).contains(port) else {
+            guard strictDecimalInteger(token, in: 1...65535) != nil else {
                 return "must contain only TCP ports between 1 and 65535."
             }
         }
@@ -160,7 +176,7 @@ enum AgentSettingsNormalization {
     private static func normalizedCIDR(_ raw: String) -> String? {
         let token = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let parts = token.split(separator: "/", maxSplits: 1).map(String.init)
-        guard parts.count == 2, let prefixBits = Int(parts[1]) else {
+        guard parts.count == 2, let prefixBits = strictDecimalInteger(parts[1]) else {
             return nil
         }
 

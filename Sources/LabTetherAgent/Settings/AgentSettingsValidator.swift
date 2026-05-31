@@ -12,7 +12,7 @@ enum AgentSettingsValidator {
         }
 
         let trimmedPort = settings.agentPort.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let value = Int(trimmedPort), (1...65535).contains(value) {
+        if AgentSettingsNormalization.strictDecimalInteger(trimmedPort, in: 1...65535) != nil {
             // valid
         } else {
             errors.append("Agent Port must be a number between 1 and 65535.")
@@ -28,7 +28,7 @@ enum AgentSettingsValidator {
                 errors.append(endpointError)
             }
             let trimmedInterval = settings.dockerDiscoveryIntervalSec.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let value = Int(trimmedInterval), (5...3600).contains(value) {
+            if AgentSettingsNormalization.strictDecimalInteger(trimmedInterval, in: 5...3600) != nil {
                 // valid
             } else {
                 errors.append("Docker discovery interval must be a number between 5 and 3600 seconds.")
@@ -51,7 +51,7 @@ enum AgentSettingsValidator {
         }
 
         let trimmedCaptureFPS = settings.captureFPS.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let value = Int(trimmedCaptureFPS), (5...120).contains(value) {
+        if AgentSettingsNormalization.strictDecimalInteger(trimmedCaptureFPS, in: 5...120) != nil {
             // valid
         } else {
             errors.append("Capture FPS must be a number between 5 and 120.")
@@ -68,7 +68,7 @@ enum AgentSettingsValidator {
         }
 
         let trimmedLANMaxHosts = settings.servicesDiscoveryLANScanMaxHosts.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let value = Int(trimmedLANMaxHosts), (1...1024).contains(value) {
+        if AgentSettingsNormalization.strictDecimalInteger(trimmedLANMaxHosts, in: 1...1024) != nil {
             // valid
         } else {
             errors.append("LAN scan max hosts must be a number between 1 and 1024.")

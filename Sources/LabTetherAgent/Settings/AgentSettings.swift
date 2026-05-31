@@ -199,9 +199,17 @@ final class AgentSettings: ObservableObject {
         return endpoint
     }
 
+    func normalizedAgentPort() -> String {
+        let trimmed = agentPort.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let value = AgentSettingsNormalization.strictDecimalInteger(trimmed, in: 1...65535) else {
+            return "8091"
+        }
+        return String(value)
+    }
+
     func normalizedDockerDiscoveryInterval() -> String {
         let trimmed = dockerDiscoveryIntervalSec.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let value = Int(trimmed) else { return "30" }
+        guard let value = AgentSettingsNormalization.strictDecimalInteger(trimmed) else { return "30" }
         if value < 5 { return "5" }
         if value > 3600 { return "3600" }
         return String(value)
@@ -233,7 +241,7 @@ final class AgentSettings: ObservableObject {
 
     func normalizedCaptureFPS() -> String {
         let trimmed = captureFPS.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let value = Int(trimmed) else { return "30" }
+        guard let value = AgentSettingsNormalization.strictDecimalInteger(trimmed) else { return "30" }
         if value < 5 { return "5" }
         if value > 120 { return "120" }
         return String(value)
@@ -241,7 +249,7 @@ final class AgentSettings: ObservableObject {
 
     func normalizedLANScanMaxHosts() -> String {
         let trimmed = servicesDiscoveryLANScanMaxHosts.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let value = Int(trimmed) else { return "64" }
+        guard let value = AgentSettingsNormalization.strictDecimalInteger(trimmed) else { return "64" }
         if value < 1 { return "1" }
         if value > 1024 { return "1024" }
         return String(value)
