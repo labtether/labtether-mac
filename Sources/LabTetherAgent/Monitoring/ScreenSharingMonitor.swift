@@ -135,16 +135,38 @@ final class ScreenSharingMonitor: ObservableObject {
     /// Grants full ARD control privileges using the kickstart tool (requires admin password).
     static func grantControlAccess() {
         let kickstart = "/System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart"
-        let user = NSUserName()
-        // Quote the username for shell safety (defensive; macOS usernames are typically simple).
-        let escapedUser = user.replacingOccurrences(of: "'", with: "'\\''")
-        let script = """
-        do shell script "\\\"\(kickstart)\\\" -configure -access -on -users '\(escapedUser)' -privs -all -restart -agent" with administrator privileges
-        """
+        let command = screenSharingGrantCommand(kickstart: kickstart, user: NSUserName())
+        let script = "do shell script \(appleScriptStringLiteral(command)) with administrator privileges"
         if let appleScript = NSAppleScript(source: script) {
             var error: NSDictionary?
             appleScript.executeAndReturnError(&error)
         }
+    }
+
+    nonisolated static func screenSharingGrantCommand(kickstart: String, user: String) -> String {
+        [
+            shellSingleQuotedArgument(kickstart),
+            "-configure",
+            "-access",
+            "-on",
+            "-users",
+            shellSingleQuotedArgument(user),
+            "-privs",
+            "-all",
+            "-restart",
+            "-agent",
+        ].joined(separator: " ")
+    }
+
+    nonisolated static func shellSingleQuotedArgument(_ value: String) -> String {
+        "'\(value.replacingOccurrences(of: "'", with: "'\\''"))'"
+    }
+
+    nonisolated static func appleScriptStringLiteral(_ value: String) -> String {
+        let escaped = value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        return "\"\(escaped)\""
     }
 
     /// Checks whether the current user has ARD control (not just observe) privileges
