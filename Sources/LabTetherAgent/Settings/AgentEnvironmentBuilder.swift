@@ -54,7 +54,7 @@ enum AgentEnvironmentBuilder {
         }
         if !settings.assetID.isEmpty { env["AGENT_ASSET_ID"] = settings.assetID }
         if !settings.groupID.isEmpty { env["AGENT_GROUP_ID"] = settings.groupID }
-        env["AGENT_PORT"] = settings.agentPort
+        env["AGENT_PORT"] = settings.normalizedAgentPort()
         if settings.tlsSkipVerify { env["LABTETHER_TLS_SKIP_VERIFY"] = "true" }
         if !settings.tlsCAFile.isEmpty { env["LABTETHER_TLS_CA_FILE"] = settings.tlsCAFile }
         env["LABTETHER_DOCKER_ENABLED"] = settings.normalizedDockerMode()
