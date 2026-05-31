@@ -94,8 +94,8 @@ struct PopOutView: View {
     }
 
     @MainActor private func openDevicePage() {
-        if let consoleURL = settings.consoleURL, !status.assetID.isEmpty {
-            let deviceURL = consoleURL.appendingPathComponent("nodes/\(status.assetID)")
+        if let consoleURL = settings.consoleURL,
+           let deviceURL = ConsoleURLBuilder.nodeURL(base: consoleURL, assetID: status.assetID) {
             NSWorkspace.shared.open(deviceURL)
         }
     }

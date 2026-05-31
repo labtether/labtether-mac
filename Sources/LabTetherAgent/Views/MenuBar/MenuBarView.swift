@@ -138,8 +138,9 @@ struct MenuBarView: View {
 
     @MainActor private func openDevicePage() {
         if let base = settings.consoleURL {
-            let deviceURL = base.appendingPathComponent("nodes/\(status.assetID)")
-            NSWorkspace.shared.open(deviceURL)
+            if let deviceURL = ConsoleURLBuilder.nodeURL(base: base, assetID: status.assetID) {
+                NSWorkspace.shared.open(deviceURL)
+            }
         }
     }
 
