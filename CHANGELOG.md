@@ -44,4 +44,4 @@ and this project uses [CalVer](https://calver.org/) versioning: `YYYY.N`.
 - Gated all repeatForever animations on popover visibility to eliminate idle CPU usage
 - @Sendable annotation and unused result warning in ConnectionTester
 
-[2026.1]: https://github.com/labtether/mac-agent/releases/tag/v2026.1
+[2026.1]: https://github.com/labtether/labtether-mac/releases/tag/v2026.1
