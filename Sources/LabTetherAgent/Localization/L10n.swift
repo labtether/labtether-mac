@@ -12,7 +12,7 @@ import Foundation
 /// label.stringValue = L10n.menuSettings
 /// ```
 enum L10n {
-    private static let bundle = Bundle.module
+    private static let bundle = BundleHelper.resourceBundle
 
     // MARK: - Status
 

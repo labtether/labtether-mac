@@ -17,7 +17,17 @@ A native menu bar app that connects your Mac to your [LabTether](https://labteth
 
 ## Install
 
-Download **LabTether Agent.app** from [Releases](https://github.com/labtether/labtether-mac/releases/latest), drag it to Applications, and launch. The menu bar icon walks you through hub enrollment.
+Download `labtether-agent-macos-universal.tar.gz` and its `.sha256` file from
+[Releases](https://github.com/labtether/labtether-mac/releases/latest), then
+verify and extract the signed application before dragging it to Applications:
+
+```bash
+shasum -a 256 -c labtether-agent-macos-universal.tar.gz.sha256
+gh attestation verify labtether-agent-macos-universal.tar.gz -R labtether/labtether-mac
+tar xzf labtether-agent-macos-universal.tar.gz
+```
+
+Launch **LabTether Agent.app**. The menu bar icon walks you through hub enrollment.
 
 For detailed setup, see the [macOS agent setup guide](https://labtether.com/docs/install-upgrade/agent-install-commands-by-os).
 
@@ -25,11 +35,11 @@ For detailed setup, see the [macOS agent setup guide](https://labtether.com/docs
 
 ## What It Does
 
-- **System telemetry** -- CPU, memory, disk, network, and temperature reported to your hub every heartbeat.
+- **System telemetry** -- CPU, memory, disk, and network reported to your hub every heartbeat, with temperature included when macOS exposes a usable sensor source.
 - **Remote access** -- Terminal and desktop sessions from the LabTether console. No VNC clients or SSH keys needed.
 - **Menu bar status** -- Connection state, alerts, and quick actions at a glance.
 - **Service management** -- Monitor and manage launchd services from the dashboard.
-- **Notifications** -- Native macOS alerts for hub events and incident updates.
+- **Notifications** -- Native macOS alerts for agent connection state and high/critical hub alert transitions.
 
 ---
 
@@ -44,12 +54,18 @@ For detailed setup, see the [macOS agent setup guide](https://labtether.com/docs
 ## Build From Source
 
 Requires Xcode with Swift 5.9+ and macOS 13+ deployment target.
+The sibling [`labtether-agent`](https://github.com/labtether/labtether-agent)
+checkout and its declared Go toolchain are also required because the native app
+always ships the Go agent core inside its signed application bundle.
 
 ```bash
-swift build
+git clone https://github.com/labtether/labtether-agent ../labtether-agent
+./scripts/build-app.sh --configuration release
 ```
 
-The Mac agent bundles the Go `labtether-agent` binary. See `AGENT_VERSION` for the pinned release.
+The result is `build/LabTether Agent.app`. The builder fails if the Go child,
+Swift host, resource bundle, icon, expected architecture, or signature is
+missing. Use `LABTETHER_AGENT_REPO` when the agent checkout is elsewhere.
 
 For most users, download the pre-built app from [Releases](https://github.com/labtether/labtether-mac/releases/latest) instead.
 

@@ -147,7 +147,12 @@ final class AppState: ObservableObject {
 
         // Sync login item state
         if LoginItemManager.isEnabled != settings.startAtLogin {
-            _ = LoginItemManager.setEnabled(settings.startAtLogin)
+            let requestedState = settings.startAtLogin
+            if !LoginItemManager.setEnabled(requestedState) {
+                // Do not leave UserDefaults claiming a login item state that
+                // macOS rejected or still requires the user to approve.
+                settings.startAtLogin = LoginItemManager.isEnabled
+            }
         }
 
         // Start monitoring Screen Sharing status

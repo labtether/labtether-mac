@@ -16,7 +16,12 @@ struct SettingsAdvancedTab: View {
                                           if LoginItemManager.setEnabled(newValue) {
                                               settings.startAtLogin = newValue
                                           } else {
-                                              status.markError("Start at Login requires running as an installed .app bundle.")
+                                              settings.startAtLogin = LoginItemManager.isEnabled
+                                              status.markError(
+                                                  newValue
+                                                      ? "Start at Login was not enabled. Approve LabTether in System Settings > General > Login Items, then try again."
+                                                      : "Start at Login could not be disabled. Check System Settings > General > Login Items."
+                                              )
                                           }
                                       }
                                   ))
@@ -24,7 +29,7 @@ struct SettingsAdvancedTab: View {
                 SettingsToggleRow(icon: "play.circle.fill", label: "Auto-Start Agent on Launch",
                                   isOn: $settings.autoStart)
 
-                SettingsToggleRow(icon: "arrow.triangle.2.circlepath.circle.fill", label: "Auto-Update Agent on Startup",
+                SettingsToggleRow(icon: "arrow.triangle.2.circlepath.circle.fill", label: "Auto-Update Agent Core on Startup",
                                   isOn: $settings.autoUpdateEnabled,
                                   onChange: { settings.markChanged() })
             }

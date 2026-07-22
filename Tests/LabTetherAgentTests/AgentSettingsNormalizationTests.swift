@@ -93,9 +93,65 @@ final class AgentSettingsNormalizationTests: XCTestCase {
         )
     }
 
-    func testRuntimeAPITokenFileActionAlwaysRemovesWhenTokenIsCleared() {
-        XCTAssertEqual(AgentSettings.runtimeAPITokenFileAction(apiToken: ""), .remove)
-        XCTAssertEqual(AgentSettings.runtimeAPITokenFileAction(apiToken: "   "), .remove)
-        XCTAssertEqual(AgentSettings.runtimeAPITokenFileAction(apiToken: "agent-token"), .persist)
+    func testRuntimeAPITokenFileActionPreservesEnrollmentIssuedCredential() {
+        XCTAssertEqual(
+            AgentSettings.runtimeAPITokenFileAction(
+                apiToken: "",
+                enrollmentToken: "",
+                hasPersistedAgentToken: false
+            ),
+            .remove
+        )
+        XCTAssertEqual(
+            AgentSettings.runtimeAPITokenFileAction(
+                apiToken: "",
+                enrollmentToken: "one-use-token",
+                hasPersistedAgentToken: false
+            ),
+            .preserve
+        )
+        XCTAssertEqual(
+            AgentSettings.runtimeAPITokenFileAction(
+                apiToken: "",
+                enrollmentToken: "",
+                hasPersistedAgentToken: true
+            ),
+            .preserve
+        )
+        XCTAssertEqual(
+            AgentSettings.runtimeAPITokenFileAction(
+                apiToken: "agent-token",
+                enrollmentToken: "",
+                hasPersistedAgentToken: false
+            ),
+            .persist
+        )
+    }
+
+    func testMinimumCredentialsIncludePrivatePersistedAgentToken() throws {
+        XCTAssertTrue(
+            AgentSettings.minimumCredentialConfigured(
+                apiToken: "",
+                enrollmentToken: "",
+                hasPersistedAgentToken: true
+            )
+        )
+        XCTAssertFalse(
+            AgentSettings.minimumCredentialConfigured(
+                apiToken: "",
+                enrollmentToken: "",
+                hasPersistedAgentToken: false
+            )
+        )
+
+        let tokenFile = FileManager.default.temporaryDirectory
+            .appendingPathComponent("labtether-agent-token-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: tokenFile) }
+        try Data("secret\n".utf8).write(to: tokenFile)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tokenFile.path)
+        XCTAssertTrue(AgentSettings.hasPrivatePersistedAgentToken(at: tokenFile.path))
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: tokenFile.path)
+        XCTAssertFalse(AgentSettings.hasPrivatePersistedAgentToken(at: tokenFile.path))
     }
 }

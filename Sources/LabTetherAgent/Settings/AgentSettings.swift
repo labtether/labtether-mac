@@ -12,6 +12,7 @@ private struct AgentSettingsSecretError: LocalizedError {
 final class AgentSettings: ObservableObject {
     enum RuntimeSecretFileAction: Equatable {
         case persist
+        case preserve
         case remove
     }
 
@@ -92,8 +93,18 @@ final class AgentSettings: ObservableObject {
     /// Whether the minimum required config is present to start the agent.
     var isConfigured: Bool {
         normalizedHubWebSocketURL() != nil &&
-        (!apiToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-            !enrollmentToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        Self.minimumCredentialConfigured(
+            apiToken: apiToken,
+            enrollmentToken: enrollmentToken,
+            hasPersistedAgentToken: hasPersistedAgentToken
+        )
+    }
+
+    /// Whether a previously enrolled agent credential is available on disk.
+    /// The Go child owns and validates the credential contents; the native host
+    /// only treats a non-empty, private regular file as configured state.
+    var hasPersistedAgentToken: Bool {
+        Self.hasPrivatePersistedAgentToken(at: tokenFilePath)
     }
 
     /// Bump the settings version to signal that a restart may be needed.
@@ -178,9 +189,42 @@ final class AgentSettings: ObservableObject {
         AgentSettingsNormalization.canonicalHubWebSocketURL(from: hubURL)
     }
 
-    static func runtimeAPITokenFileAction(apiToken: String) -> RuntimeSecretFileAction {
+    static func runtimeAPITokenFileAction(
+        apiToken: String,
+        enrollmentToken: String,
+        hasPersistedAgentToken: Bool
+    ) -> RuntimeSecretFileAction {
         let trimmed = apiToken.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? .remove : .persist
+        if !trimmed.isEmpty {
+            return .persist
+        }
+        if !enrollmentToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            hasPersistedAgentToken {
+            return .preserve
+        }
+        return .remove
+    }
+
+    static func minimumCredentialConfigured(
+        apiToken: String,
+        enrollmentToken: String,
+        hasPersistedAgentToken: Bool
+    ) -> Bool {
+        !apiToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            !enrollmentToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            hasPersistedAgentToken
+    }
+
+    static func hasPrivatePersistedAgentToken(at path: String) -> Bool {
+        guard !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let attributes = try? FileManager.default.attributesOfItem(atPath: path),
+              attributes[.type] as? FileAttributeType == .typeRegular,
+              let size = attributes[.size] as? NSNumber,
+              size.intValue > 0,
+              let permissions = attributes[.posixPermissions] as? NSNumber else {
+            return false
+        }
+        return permissions.intValue & 0o077 == 0
     }
 
     func normalizedDockerMode() -> String {
@@ -351,10 +395,42 @@ final class AgentSettings: ObservableObject {
         localAPIAuthToken = ""
     }
 
+    /// Remove a one-use enrollment secret after the Go child has either issued
+    /// or loaded the durable agent credential. This deliberately preserves the
+    /// agent token file so an enrolled app can reconnect after relaunch.
+    func clearConsumedEnrollmentTokenPreservingAgentToken() {
+        guard !enrollmentToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return
+        }
+
+        let status = KeychainSecretStore.deleteStatus(account: Self.enrollmentTokenAccount)
+        guard status == errSecSuccess else {
+            setSecretPersistenceIssue(
+                key: keychainIssueKey(for: Self.enrollmentTokenAccount),
+                message: "Enrollment token could not be removed from the macOS Keychain: \(KeychainSecretStore.errorMessage(for: status))"
+            )
+            return
+        }
+
+        isLoadingSecrets = true
+        enrollmentToken = ""
+        isLoadingSecrets = false
+        setSecretPersistenceIssue(key: keychainIssueKey(for: Self.enrollmentTokenAccount), message: nil)
+        try? removeRuntimeSecretIfNeeded(
+            at: enrollmentTokenFilePath,
+            issueKey: "runtime.enrollmentToken",
+            label: "Enrollment token"
+        )
+    }
+
     private func synchronizeRuntimeSecretFilesAfterSecretChange(account: String) {
         switch account {
         case Self.apiTokenAccount:
-            if Self.runtimeAPITokenFileAction(apiToken: apiToken) == .remove {
+            if Self.runtimeAPITokenFileAction(
+                apiToken: apiToken,
+                enrollmentToken: enrollmentToken,
+                hasPersistedAgentToken: hasPersistedAgentToken
+            ) == .remove {
                 try? removeRuntimeSecretIfNeeded(
                     at: tokenFilePath,
                     issueKey: "runtime.apiToken",
@@ -367,13 +443,6 @@ final class AgentSettings: ObservableObject {
                 issueKey: "runtime.enrollmentToken",
                 label: "Enrollment token"
             )
-            if Self.runtimeAPITokenFileAction(apiToken: apiToken) == .remove {
-                try? removeRuntimeSecretIfNeeded(
-                    at: tokenFilePath,
-                    issueKey: "runtime.apiToken",
-                    label: "API token"
-                )
-            }
         case Self.webrtcTurnPassAccount:
             try? removeRuntimeSecretIfNeeded(
                 at: webrtcTurnPassFilePath,

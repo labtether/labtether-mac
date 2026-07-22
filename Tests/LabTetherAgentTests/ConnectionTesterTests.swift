@@ -19,11 +19,20 @@ final class ConnectionTesterTests: XCTestCase {
         )
     }
 
-    func testHTTPBaseURLStripsPathQueryAndFragment() {
+    func testHTTPBaseURLStripsWebSocketPath() {
         XCTAssertEqual(
-            ConnectionTester.httpBaseURL(from: "wss://hub.example.com/ws/agent?foo=bar#frag"),
+            ConnectionTester.httpBaseURL(from: "wss://hub.example.com/ws/agent"),
             URL(string: "https://hub.example.com")
         )
+    }
+
+    func testHTTPBaseURLRejectsQueryOrFragment() {
+        XCTAssertNil(ConnectionTester.httpBaseURL(from: "wss://hub.example.com/ws/agent?foo=bar"))
+        XCTAssertNil(ConnectionTester.httpBaseURL(from: "wss://hub.example.com/ws/agent#frag"))
+    }
+
+    func testHTTPBaseURLRejectsUserInformation() {
+        XCTAssertNil(ConnectionTester.httpBaseURL(from: "wss://user:secret@hub.example.com/ws/agent"))
     }
 
     func testHTTPBaseURLPreservesExplicitPort() {
@@ -50,6 +59,55 @@ final class ConnectionTesterTests: XCTestCase {
         let result = ConnectionTester.httpBaseURL(from: "wss://hub.example.com/ws/agent")
         XCTAssertEqual(result, URL(string: "https://hub.example.com"))
         XCTAssertNil(result.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false)?.port })
+    }
+
+    // MARK: - Hub identity response
+
+    func testHubIdentityValidationAcceptsCanonicalRootResponse() throws {
+        let body = try XCTUnwrap("{\"service\":\"labtether-hub\",\"message\":\"running\"}".data(using: .utf8))
+
+        XCTAssertNil(ConnectionTester.hubIdentityValidationError(statusCode: 200, body: body))
+    }
+
+    func testHubIdentityValidationRejectsEveryNon200Response() throws {
+        let body = try XCTUnwrap("{\"service\":\"labtether-hub\"}".data(using: .utf8))
+
+        for statusCode in [201, 302, 401, 404, 500] {
+            let error = ConnectionTester.hubIdentityValidationError(statusCode: statusCode, body: body)
+            XCTAssertEqual(error, "Hub verification failed (HTTP \(statusCode)).")
+        }
+    }
+
+    func testHubIdentityValidationRejectsUnrelatedAndMalformedEndpoints() throws {
+        let unrelated = try XCTUnwrap("{\"service\":\"something-else\"}".data(using: .utf8))
+        let missingService = try XCTUnwrap("{\"status\":\"ok\"}".data(using: .utf8))
+        let malformed = try XCTUnwrap("not-json".data(using: .utf8))
+
+        XCTAssertNotNil(ConnectionTester.hubIdentityValidationError(statusCode: 200, body: unrelated))
+        XCTAssertNotNil(ConnectionTester.hubIdentityValidationError(statusCode: 200, body: missingService))
+        XCTAssertNotNil(ConnectionTester.hubIdentityValidationError(statusCode: 200, body: malformed))
+    }
+
+    func testHubIdentityValidationRejectsOversizedResponse() {
+        let oversized = Data(repeating: 0x61, count: ConnectionTester.maxProbeBodyBytes + 1)
+        let canonical = Data("{\"service\":\"labtether-hub\"}".utf8)
+
+        XCTAssertEqual(
+            ConnectionTester.hubIdentityValidationError(statusCode: 200, body: oversized),
+            "Hub verification response is too large."
+        )
+        XCTAssertEqual(
+            ConnectionTester.hubIdentityValidationError(
+                statusCode: 200,
+                expectedContentLength: Int64(ConnectionTester.maxProbeBodyBytes + 1),
+                body: canonical
+            ),
+            "Hub verification response is too large."
+        )
+    }
+
+    func testHubIdentityValidationRejectsNonHTTPResponse() {
+        XCTAssertNotNil(ConnectionTester.hubIdentityValidationError(statusCode: nil, body: Data()))
     }
 
     // MARK: - ConnectionTestResult
@@ -151,6 +209,19 @@ final class ConnectionTesterTests: XCTestCase {
         ]
         let report = ConnectionTester.formatDiagnosticsReport(steps, hubURL: "wss://hub.example.com:8443/ws/agent")
         XCTAssertTrue(report.contains("wss://hub.example.com:8443/ws/agent"))
+    }
+
+    func testFormatDiagnosticsReportRedactsCredentialsQueryAndFragment() {
+        let report = ConnectionTester.formatDiagnosticsReport(
+            [],
+            hubURL: "wss://user:secret@hub.example.com/ws/agent?token=also-secret#fragment"
+        )
+
+        XCTAssertTrue(report.contains("wss://hub.example.com/ws/agent"))
+        XCTAssertFalse(report.contains("user"))
+        XCTAssertFalse(report.contains("secret"))
+        XCTAssertFalse(report.contains("token"))
+        XCTAssertFalse(report.contains("fragment"))
     }
 
     func testFormatDiagnosticsReportIncludesStepNames() {

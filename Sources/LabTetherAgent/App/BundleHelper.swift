@@ -2,35 +2,87 @@ import Foundation
 
 /// Locates the Go agent binary bundled inside the .app Resources directory.
 enum BundleHelper {
+    private static let bundledAgentName = "labtether-agent"
+    private static let resourceBundleName = "LabTetherAgent_LabTetherAgent"
+
     /// Path to the Go binary inside the app bundle.
     /// Falls back to a development path if not running from a bundle.
     static var agentBinaryPath: String {
-        // When running from .app bundle: Contents/Resources/labtether-agent
-        if let bundledPath = Bundle.main.path(forResource: "labtether-agent", ofType: nil) {
-            return bundledPath
+        let bundledPath = Bundle.main.path(forResource: bundledAgentName, ofType: nil)
+        let overridePath = ProcessInfo.processInfo.environment["LABTETHER_AGENT_BINARY_PATH"]
+        return resolveAgentBinaryPath(
+            bundledPath: bundledPath,
+            overridePath: overridePath,
+            executableURL: Bundle.main.executableURL,
+            currentDirectoryPath: FileManager.default.currentDirectoryPath
+        )
+    }
+
+    /// Resource bundle emitted by SwiftPM and copied into Contents/Resources
+    /// by scripts/build-app.sh. The Bundle.module fallback keeps `swift run`
+    /// and `swift test` working outside an application bundle.
+    static var resourceBundle: Bundle {
+        if let url = Bundle.main.url(forResource: resourceBundleName, withExtension: "bundle"),
+           let bundle = Bundle(url: url) {
+            return bundle
+        }
+        return Bundle.module
+    }
+
+    /// Resolve the child agent without relying on a fixed number of `.build`
+    /// path components. The split-repository layout keeps generated artifacts
+    /// under mac-agent/build, next to this package.
+    static func resolveAgentBinaryPath(
+        bundledPath: String?,
+        overridePath: String?,
+        executableURL: URL?,
+        currentDirectoryPath: String,
+        isExecutable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
+    ) -> String {
+        var candidates: [String] = []
+
+        if let bundledPath, !bundledPath.isEmpty {
+            candidates.append(bundledPath)
         }
 
-        // Development fallback: look relative to the swift build output
-        // The debug binary lives at apps/mac-agent/.build/debug/LabTetherAgent
-        // The agent binary is at build/labtether-agent-darwin (project root)
-        if let execURL = Bundle.main.executableURL {
-            // Walk up from .build/debug/LabTetherAgent to apps/mac-agent, then to project root
-            let macAgentDir = execURL.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            let projectRoot = macAgentDir.deletingLastPathComponent().deletingLastPathComponent()
-            let devPath = projectRoot.appendingPathComponent("build/labtether-agent-darwin").path
-            if FileManager.default.fileExists(atPath: devPath) {
-                return devPath
+        if let overridePath {
+            let trimmed = overridePath.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.hasPrefix("/") {
+                candidates.append(trimmed)
             }
         }
 
-        // Also check CWD-relative path
-        let cwdPath = FileManager.default.currentDirectoryPath + "/build/labtether-agent-darwin"
-        if FileManager.default.fileExists(atPath: cwdPath) {
-            return cwdPath
+        if let executableURL,
+           let repositoryRoot = macAgentRepositoryRoot(containing: executableURL) {
+            candidates.append(
+                repositoryRoot.appendingPathComponent("build/labtether-agent-darwin").path
+            )
         }
 
-        // Last resort: assume it's on PATH
-        return "labtether-agent"
+        candidates.append(
+            URL(fileURLWithPath: currentDirectoryPath, isDirectory: true)
+                .appendingPathComponent("build/labtether-agent-darwin")
+                .path
+        )
+
+        if let match = candidates.first(where: isExecutable) {
+            return match
+        }
+
+        // Last resort: allow normal PATH lookup. AgentProcess rejects a missing
+        // or non-executable child with an actionable error before launch.
+        return bundledAgentName
+    }
+
+    private static func macAgentRepositoryRoot(containing executableURL: URL) -> URL? {
+        var cursor = executableURL.deletingLastPathComponent()
+        while cursor.path != "/" {
+            if cursor.lastPathComponent == "mac-agent" {
+                return cursor
+            }
+            cursor.deleteLastPathComponent()
+        }
+        return nil
     }
 
     /// Whether the Go binary exists and is executable.

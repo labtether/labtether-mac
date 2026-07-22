@@ -45,15 +45,16 @@ enum FontLoader {
         }
     }
 
-    /// Resolves the URL for a font file, searching Bundle.main with both
+    /// Resolves the URL for a font file, searching the SwiftPM resource bundle with both
     /// a Fonts subdirectory path and a flat resource path as fallbacks.
     private static func resolveFont(named name: String) -> URL? {
+        let resources = BundleHelper.resourceBundle
         // Primary: Resources/Fonts subdirectory (SPM .copy placement)
-        if let url = Bundle.main.url(forResource: name, withExtension: "ttf", subdirectory: "Fonts") {
+        if let url = resources.url(forResource: name, withExtension: "ttf", subdirectory: "Fonts") {
             return url
         }
         // Fallback: flat resource lookup
-        if let url = Bundle.main.url(forResource: name, withExtension: "ttf") {
+        if let url = resources.url(forResource: name, withExtension: "ttf") {
             return url
         }
         return nil
