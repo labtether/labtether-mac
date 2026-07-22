@@ -37,7 +37,11 @@ enum AgentEnvironmentBuilder {
                 label: "Enrollment token"
             )
         }
-        switch AgentSettings.runtimeAPITokenFileAction(apiToken: trimmedAPIToken) {
+        switch AgentSettings.runtimeAPITokenFileAction(
+            apiToken: trimmedAPIToken,
+            enrollmentToken: trimmedEnrollmentToken,
+            hasPersistedAgentToken: settings.hasPersistedAgentToken
+        ) {
         case .persist:
             try settings.persistRuntimeSecret(
                 trimmedAPIToken,
@@ -45,6 +49,8 @@ enum AgentEnvironmentBuilder {
                 issueKey: "runtime.apiToken",
                 label: "API token"
             )
+        case .preserve:
+            break
         case .remove:
             try settings.removeRuntimeSecretIfNeeded(
                 at: settings.tokenFilePath,

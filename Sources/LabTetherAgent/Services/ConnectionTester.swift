@@ -33,18 +33,29 @@ struct DiagnosticStep: Identifiable {
 /// and menu bar quick actions.
 enum ConnectionTester {
 
+    static let maxProbeBodyBytes = 8 * 1_024
+
     // MARK: URL helpers
 
     /// Converts a WebSocket hub URL to its HTTP base URL (origin only — no path, query, or fragment).
     ///
     /// - `wss://` becomes `https://`
     /// - `ws://` becomes `http://`
-    /// - Any path, query, or fragment is stripped.
+    /// - Any path is stripped.
+    /// - User information, queries, and fragments are rejected instead of silently
+    ///   changing which endpoint is verified.
     /// - Returns `nil` for any input that is not a valid `ws://` or `wss://` URL.
     static func httpBaseURL(from wsURLString: String) -> URL? {
-        guard !wsURLString.isEmpty,
-              var components = URLComponents(string: wsURLString),
+        let normalized = wsURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty,
+              var components = URLComponents(string: normalized),
               let scheme = components.scheme?.lowercased()
+        else { return nil }
+
+        guard components.user == nil,
+              components.password == nil,
+              components.query == nil,
+              components.fragment == nil
         else { return nil }
 
         switch scheme {
@@ -58,20 +69,16 @@ enum ConnectionTester {
 
         guard let host = components.host, !host.isEmpty else { return nil }
 
-        // Strip path, query, and fragment — keep only origin.
+        // Strip the WebSocket path — probe only the hub's canonical root endpoint.
         components.path = ""
-        components.query = nil
-        components.fragment = nil
 
         return components.url
     }
 
     // MARK: Quick test
 
-    /// Performs a single HTTP GET to the hub base URL and reports reachability.
-    ///
-    /// Any HTTP status in `200..<500` is treated as "reachable" — a `401` or `403`
-    /// still means the server is there and listening.
+    /// Performs a single HTTP GET to the hub base URL and verifies the canonical
+    /// LabTether hub identity response.
     ///
     /// - Parameters:
     ///   - hubURL: The WebSocket hub URL (e.g. `wss://host:port/ws/agent`).
@@ -79,30 +86,23 @@ enum ConnectionTester {
     /// - Returns: `.success(responseTimeMs:)` or `.failure(error:)`.
     static func quickTest(hubURL: String, tlsSkipVerify: Bool = false) async -> ConnectionTestResult {
         guard let baseURL = httpBaseURL(from: hubURL) else {
-            return .failure(error: "Invalid hub URL: \(hubURL)")
+            return .failure(error: "Invalid hub URL.")
         }
-
-        let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 10
-        config.timeoutIntervalForResource = 10
-
-        let delegate = tlsSkipVerify ? TLSSkipDelegate() : nil
-        let session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
-        defer { session.invalidateAndCancel() }
 
         let start = Date()
         do {
-            let (_, response) = try await session.data(from: baseURL)
+            let response = try await probeHub(url: baseURL, tlsSkipVerify: tlsSkipVerify)
             let elapsed = Int(Date().timeIntervalSince(start) * 1_000)
-            if let http = response as? HTTPURLResponse {
-                if (200..<500).contains(http.statusCode) {
-                    return .success(responseTimeMs: elapsed)
-                }
-                return .failure(error: "HTTP \(http.statusCode)")
+            if let validationError = hubIdentityValidationError(
+                statusCode: response.statusCode,
+                expectedContentLength: response.expectedContentLength,
+                body: response.body
+            ) {
+                return .failure(error: validationError)
             }
             return .success(responseTimeMs: elapsed)
         } catch {
-            return .failure(error: error.localizedDescription)
+            return .failure(error: probeFailureMessage(error))
         }
     }
 
@@ -114,7 +114,7 @@ enum ConnectionTester {
     /// 1. DNS resolution
     /// 2. TCP connect
     /// 3. TLS handshake
-    /// 4. HTTP reachability
+    /// 4. LabTether hub identity verification
     ///
     /// - Parameters:
     ///   - hubURL: The WebSocket hub URL.
@@ -208,7 +208,7 @@ enum ConnectionTester {
     static func formatDiagnosticsReport(_ steps: [DiagnosticStep], hubURL: String) -> String {
         var lines: [String] = []
         lines.append("Connection Diagnostics Report")
-        lines.append("Hub: \(hubURL)")
+        lines.append("Hub: \(redactedHubURL(hubURL))")
         lines.append(String(repeating: "-", count: 40))
 
         for step in steps {
@@ -237,6 +237,132 @@ enum ConnectionTester {
     }
 
     // MARK: - Private helpers
+
+    private struct HubProbeResponse {
+        let statusCode: Int
+        let expectedContentLength: Int64
+        let body: Data
+    }
+
+    private enum HubProbeError: Error {
+        case invalidHTTPResponse
+        case responseTooLarge
+    }
+
+    /// Validates the bounded response returned by the hub root endpoint. This is
+    /// internal so the identity contract can be exercised without a live server.
+    static func hubIdentityValidationError(
+        statusCode: Int?,
+        expectedContentLength: Int64 = NSURLSessionTransferSizeUnknown,
+        body: Data
+    ) -> String? {
+        guard let statusCode else {
+            return "The endpoint returned an invalid HTTP response."
+        }
+        guard statusCode == 200 else {
+            return "Hub verification failed (HTTP \(statusCode))."
+        }
+        guard expectedContentLength <= maxProbeBodyBytes,
+              body.count <= maxProbeBodyBytes
+        else {
+            return "Hub verification response is too large."
+        }
+
+        guard let object = try? JSONSerialization.jsonObject(with: body),
+              let payload = object as? [String: Any],
+              let service = payload["service"] as? String
+        else {
+            return "The endpoint returned an invalid hub response."
+        }
+        guard service == "labtether-hub" else {
+            return "The endpoint is not a LabTether hub."
+        }
+        return nil
+    }
+
+    private static func probeHub(url: URL, tlsSkipVerify: Bool) async throws -> HubProbeResponse {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 10
+        config.timeoutIntervalForResource = 10
+
+        // The delegate is always installed so redirect refusal cannot be bypassed
+        // when certificate verification remains enabled.
+        let delegate = HubProbeSessionDelegate(tlsSkipVerify: tlsSkipVerify)
+        let session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
+        defer { session.invalidateAndCancel() }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (bytes, response) = try await session.bytes(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw HubProbeError.invalidHTTPResponse
+        }
+        if http.expectedContentLength > maxProbeBodyBytes {
+            throw HubProbeError.responseTooLarge
+        }
+
+        var body = Data()
+        body.reserveCapacity(min(maxProbeBodyBytes, max(0, Int(http.expectedContentLength))))
+        for try await byte in bytes {
+            guard body.count < maxProbeBodyBytes else {
+                throw HubProbeError.responseTooLarge
+            }
+            body.append(byte)
+        }
+
+        return HubProbeResponse(
+            statusCode: http.statusCode,
+            expectedContentLength: http.expectedContentLength,
+            body: body
+        )
+    }
+
+    private static func probeFailureMessage(_ error: Error) -> String {
+        if let probeError = error as? HubProbeError {
+            switch probeError {
+            case .invalidHTTPResponse:
+                return "The endpoint returned an invalid HTTP response."
+            case .responseTooLarge:
+                return "Hub verification response is too large."
+            }
+        }
+
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .timedOut:
+                return "Connection timed out."
+            case .serverCertificateHasBadDate,
+                 .serverCertificateNotYetValid,
+                 .serverCertificateUntrusted,
+                 .serverCertificateHasUnknownRoot,
+                 .secureConnectionFailed,
+                 .clientCertificateRejected,
+                 .clientCertificateRequired:
+                return "TLS certificate verification failed."
+            default:
+                return "Connection failed."
+            }
+        }
+
+        return "Unexpected connection error."
+    }
+
+    private static func redactedHubURL(_ value: String) -> String {
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard var components = URLComponents(string: normalized),
+              components.scheme != nil,
+              components.host != nil
+        else {
+            return "<invalid>"
+        }
+        components.user = nil
+        components.password = nil
+        components.query = nil
+        components.fragment = nil
+        return components.string ?? "<invalid>"
+    }
 
     private static func defaultPort(for url: URL) -> Int {
         switch url.scheme?.lowercased() {
@@ -396,47 +522,58 @@ enum ConnectionTester {
         }
     }
 
-    /// Performs an HTTP GET to `url` with a 10-second timeout.
+    /// Performs a bounded, non-redirecting HTTP GET to `url` and verifies the
+    /// canonical LabTether hub identity response.
     private static func checkHTTP(url: URL, tlsSkipVerify: Bool) async -> StepStatus {
-        let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 10
-        config.timeoutIntervalForResource = 10
-
-        let delegate = tlsSkipVerify ? TLSSkipDelegate() : nil
-        let session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
-        defer { session.invalidateAndCancel() }
-
         do {
-            let (_, response) = try await session.data(from: url)
-            if let http = response as? HTTPURLResponse {
-                if (200..<500).contains(http.statusCode) {
-                    return .success("HTTP \(http.statusCode)")
-                }
-                return .failure("HTTP \(http.statusCode)")
+            let response = try await probeHub(url: url, tlsSkipVerify: tlsSkipVerify)
+            if let validationError = hubIdentityValidationError(
+                statusCode: response.statusCode,
+                expectedContentLength: response.expectedContentLength,
+                body: response.body
+            ) {
+                return .failure(validationError)
             }
-            return .success("Reachable")
+            return .success("Verified LabTether hub")
         } catch {
-            return .failure(error.localizedDescription)
+            return .failure(probeFailureMessage(error))
         }
     }
 }
 
-// MARK: - TLSSkipDelegate
+// MARK: - HubProbeSessionDelegate
 
-/// A `URLSessionDelegate` that accepts all server certificates,
-/// used only when `tlsSkipVerify` is `true`.
-private final class TLSSkipDelegate: NSObject, URLSessionDelegate {
+/// A probe delegate that refuses redirects and only accepts an untrusted server
+/// certificate when the user explicitly enabled `tlsSkipVerify`.
+private final class HubProbeSessionDelegate: NSObject, URLSessionDelegate, URLSessionTaskDelegate {
+    private let tlsSkipVerify: Bool
+
+    init(tlsSkipVerify: Bool) {
+        self.tlsSkipVerify = tlsSkipVerify
+    }
+
     func urlSession(
         _ session: URLSession,
         didReceive challenge: URLAuthenticationChallenge,
         completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
-        guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+        guard tlsSkipVerify,
+              challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
               let serverTrust = challenge.protectionSpace.serverTrust
         else {
             completionHandler(.performDefaultHandling, nil)
             return
         }
         completionHandler(.useCredential, URLCredential(trust: serverTrust))
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        completionHandler(nil)
     }
 }

@@ -77,15 +77,19 @@ final class AgentProcess: ObservableObject {
 
     /// Immediately kill the agent process (used during app quit).
     func forceKill() {
-        guard let proc = process else { return }
         userInitiatedStop = true
         pendingRestart = false
+        guard let proc = process else {
+            settings.cleanupEphemeralSecrets()
+            return
+        }
         if proc.isRunning {
             kill(proc.processIdentifier, SIGKILL)
         }
         process = nil
         isRunning = false
         isStarting = false
+        settings.cleanupEphemeralSecrets()
     }
 
     func start(resetCrashHistory: Bool = true) {
@@ -162,6 +166,7 @@ final class AgentProcess: ObservableObject {
                 self.isStarting = false
                 self.stdoutPipe = nil
                 self.stderrPipe = nil
+                self.settings.cleanupEphemeralSecrets()
 
                 if wasUserStop || shouldRestart || proc.terminationStatus == 0 {
                     self.status.markStopped()
@@ -190,6 +195,7 @@ final class AgentProcess: ObservableObject {
         } catch {
             debugBootProcess("start failed to run process: \(error.localizedDescription)")
             isStarting = false
+            settings.cleanupEphemeralSecrets()
             status.markError("Failed to launch: \(error.localizedDescription)")
             return
         }
@@ -227,6 +233,7 @@ final class AgentProcess: ObservableObject {
         guard let proc = process, proc.isRunning else {
             process = nil
             isRunning = false
+            settings.cleanupEphemeralSecrets()
             status.markStopped()
             return
         }
@@ -307,7 +314,10 @@ final class AgentProcess: ObservableObject {
                     notifications.notify(.connectionLost)
                 }
             case .enrolled:
+                settings.clearConsumedEnrollmentTokenPreservingAgentToken()
                 notifications.notify(.enrolled)
+            case .tokenLoaded:
+                settings.clearConsumedEnrollmentTokenPreservingAgentToken()
             default:
                 break
             }

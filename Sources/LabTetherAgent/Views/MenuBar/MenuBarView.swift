@@ -158,7 +158,7 @@ struct MenuBarView: View {
             architecture: BundleHelper.architecture,
             hubURL: settings.hubURL,
             connectionState: status.state.rawValue,
-            apiTokenConfigured: !settings.apiToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            apiTokenConfigured: !settings.apiToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || settings.hasPersistedAgentToken,
             enrollmentTokenConfigured: !settings.enrollmentToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
             assetID: status.assetID.isEmpty ? settings.assetID : status.assetID,
             groupID: settings.groupID,

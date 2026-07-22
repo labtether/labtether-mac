@@ -9,7 +9,9 @@ let package = Package(
         .executableTarget(
             name: "LabTetherAgent",
             path: "Sources/LabTetherAgent",
-            exclude: ["CLAUDE.md", "Resources/Info.plist"],
+            // These two files are copied into the real .app layout by
+            // scripts/build-app.sh rather than into the SwiftPM resource bundle.
+            exclude: ["Resources/Info.plist", "Resources/AppIcon.icns"],
             resources: [
                 .copy("Resources/Fonts"),
                 .process("Resources/en.lproj"),
