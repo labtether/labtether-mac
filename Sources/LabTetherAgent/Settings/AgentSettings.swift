@@ -50,7 +50,6 @@ final class AgentSettings: ObservableObject {
     @AppStorage("dockerEndpoint", store: settingsStore) var dockerEndpoint: String = "/var/run/docker.sock"
     @AppStorage("dockerDiscoveryIntervalSec", store: settingsStore) var dockerDiscoveryIntervalSec: String = "30"
     @AppStorage("filesRootMode", store: settingsStore) var filesRootMode: String = "home"
-    @AppStorage("autoUpdateEnabled", store: settingsStore) var autoUpdateEnabled: Bool = true
     @AppStorage("allowRemoteOverrides", store: settingsStore) var allowRemoteOverrides: Bool = false
     @AppStorage("logLevel", store: settingsStore) var logLevel: String = "info"
     @AppStorage("webrtcEnabled", store: settingsStore) var webrtcEnabled: Bool = true
@@ -87,6 +86,7 @@ final class AgentSettings: ObservableObject {
     @Published private(set) var secretPersistenceErrors: [String] = []
 
     private init() {
+        ManagedAppUpdatePolicy.migrateLegacyPreference(in: Self.settingsStore)
         loadSecretsFromKeychain()
     }
 
