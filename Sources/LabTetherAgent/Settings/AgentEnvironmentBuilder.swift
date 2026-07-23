@@ -67,7 +67,7 @@ enum AgentEnvironmentBuilder {
         env["LABTETHER_DOCKER_SOCKET"] = settings.normalizedDockerEndpoint()
         env["LABTETHER_DOCKER_DISCOVERY_INTERVAL"] = settings.normalizedDockerDiscoveryInterval()
         env["LABTETHER_FILES_ROOT_MODE"] = settings.normalizedFilesRootMode()
-        env["LABTETHER_AUTO_UPDATE"] = settings.autoUpdateEnabled ? "true" : "false"
+        ManagedAppUpdatePolicy.apply(to: &env)
         env["LABTETHER_ALLOW_REMOTE_OVERRIDES"] = settings.allowRemoteOverrides ? "true" : "false"
         env["LABTETHER_LOG_LEVEL"] = settings.normalizedLogLevel()
         // Background `log stream --style ndjson` parsing is a measurable idle CPU hotspot

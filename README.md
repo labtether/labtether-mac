@@ -23,8 +23,10 @@ verify and extract the signed application before dragging it to Applications:
 
 ```bash
 shasum -a 256 -c labtether-agent-macos-universal.tar.gz.sha256
-gh attestation verify labtether-agent-macos-universal.tar.gz -R labtether/labtether-mac
 tar xzf labtether-agent-macos-universal.tar.gz
+xcrun stapler validate "LabTether Agent.app"
+codesign --verify --deep --strict --verbose=2 "LabTether Agent.app"
+spctl --assess --type execute --verbose=4 "LabTether Agent.app"
 ```
 
 Launch **LabTether Agent.app**. The menu bar icon walks you through hub enrollment.
@@ -66,6 +68,10 @@ git clone https://github.com/labtether/labtether-agent ../labtether-agent
 The result is `build/LabTether Agent.app`. The builder fails if the Go child,
 Swift host, resource bundle, icon, expected architecture, or signature is
 missing. Use `LABTETHER_AGENT_REPO` when the agent checkout is elsewhere.
+
+Maintainers should follow the [local-only signing, notarization, and publication
+runbook](docs/releasing.md). Hosted CI verifies source tags but never receives
+signing or notarization credentials and never publishes release bytes.
 
 For most users, download the pre-built app from [Releases](https://github.com/labtether/labtether-mac/releases/latest) instead.
 

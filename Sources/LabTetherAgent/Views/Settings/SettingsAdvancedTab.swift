@@ -29,9 +29,34 @@ struct SettingsAdvancedTab: View {
                 SettingsToggleRow(icon: "play.circle.fill", label: "Auto-Start Agent on Launch",
                                   isOn: $settings.autoStart)
 
-                SettingsToggleRow(icon: "arrow.triangle.2.circlepath.circle.fill", label: "Auto-Update Agent Core on Startup",
-                                  isOn: $settings.autoUpdateEnabled,
-                                  onChange: { settings.markChanged() })
+                HStack(spacing: LT.space8) {
+                    Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(LT.accent)
+                        .frame(width: 16)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(ManagedAppUpdatePolicy.title)
+                            .font(LT.inter(12, weight: .medium))
+                            .foregroundStyle(LT.textPrimary)
+                        Text(ManagedAppUpdatePolicy.detail)
+                            .font(LT.inter(10))
+                            .foregroundStyle(LT.textSecondary)
+                    }
+                    Spacer()
+                    Text(ManagedAppUpdatePolicy.badge)
+                        .font(LT.inter(9, weight: .semibold))
+                        .foregroundStyle(LT.accent)
+                        .padding(.horizontal, LT.space8)
+                        .padding(.vertical, 4)
+                        .background(LT.accent.opacity(0.12), in: Capsule())
+                }
+                .padding(.horizontal, LT.space12)
+                .padding(.vertical, LT.space4)
+                .background(LT.panelGlass, in: RoundedRectangle(cornerRadius: LT.radiusSm, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: LT.radiusSm, style: .continuous)
+                        .strokeBorder(LT.panelBorder, lineWidth: 1)
+                )
             }
 
             SettingsCardSection("DOCKER INTEGRATION") {

@@ -29,6 +29,7 @@ Environment:
   LABTETHER_AGENT_VERSION        Version embedded in the Go child
   LABTETHER_APP_VERSION          CFBundleShortVersionString override
   LABTETHER_APP_BUILD_NUMBER     CFBundleVersion override
+  LABTETHER_SWIFT_SCRATCH_PATH   External SwiftPM scratch directory
 USAGE
 }
 
@@ -129,6 +130,15 @@ APP_VERSION="${LABTETHER_APP_VERSION:-$(plutil -extract CFBundleShortVersionStri
 APP_BUILD_NUMBER="${LABTETHER_APP_BUILD_NUMBER:-$(plutil -extract CFBundleVersion raw "${REPO_ROOT}/Sources/LabTetherAgent/Resources/Info.plist")}"
 
 SWIFT_ARGS=(build -c "${CONFIGURATION}")
+if [[ -n "${LABTETHER_SWIFT_SCRATCH_PATH:-}" ]]; then
+  if [[ "${LABTETHER_SWIFT_SCRATCH_PATH}" != /* \
+    || ! -d "${LABTETHER_SWIFT_SCRATCH_PATH}" \
+    || -L "${LABTETHER_SWIFT_SCRATCH_PATH}" ]]; then
+    echo "LABTETHER_SWIFT_SCRATCH_PATH must be an existing absolute, non-symlink directory" >&2
+    exit 2
+  fi
+  SWIFT_ARGS+=(--scratch-path "${LABTETHER_SWIFT_SCRATCH_PATH}")
+fi
 for arch in "${ARCHS[@]}"; do
   SWIFT_ARGS+=(--arch "${arch}")
 done

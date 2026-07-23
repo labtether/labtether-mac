@@ -63,3 +63,7 @@ AGENTS.md
 .worktrees/
 .playwright-mcp/
 .gstack/
+
+# Signed release outputs must be prepared outside the repository.
+labtether-agent-macos-universal.tar.gz
+labtether-agent-macos-universal.tar.gz.sha256
