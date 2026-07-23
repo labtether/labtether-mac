@@ -22,6 +22,19 @@ grep -Eq '^[[:space:]]+contents:[[:space:]]+read[[:space:]]*$' "${WORKFLOW}" \
   || fail "tag verification workflow must have read-only contents permission"
 [[ "$(grep -Ec '^[[:space:]]+fetch-depth:[[:space:]]+0[[:space:]]*$' "${WORKFLOW}")" == "2" ]] \
   || fail "both release source checkouts must fetch tags explicitly"
+# These are literal workflow commands, not shell expansions in this policy test.
+# shellcheck disable=SC2016
+for required_tag_check in \
+  'test "$(git rev-parse HEAD)" = ' \
+  'git rev-list -n 1 "refs/tags/${GITHUB_REF_NAME}"' \
+  'test "$(git -C agent-core rev-parse HEAD)" = ' \
+  'git -C agent-core rev-list -n 1 "refs/tags/${GITHUB_REF_NAME}"'; do
+  grep -Fq "${required_tag_check}" "${WORKFLOW}" \
+    || fail "tag verification must compare each checkout to the triggering tag commit"
+done
+if grep -Fq 'git describe --tags --exact-match' "${WORKFLOW}"; then
+  fail "tag verification must not use ambiguous describe output when tags share a commit"
+fi
 # The fixed policy text intentionally contains a literal command substitution.
 # shellcheck disable=SC2016
 grep -Fq 'test "$(git status --porcelain=v1 --untracked-files=all)" = "?? agent-core/"' "${WORKFLOW}" \

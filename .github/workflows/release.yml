@@ -35,8 +35,10 @@ jobs:
         run: |
           set -euo pipefail
           [[ "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          test "$(git describe --tags --exact-match)" = "${GITHUB_REF_NAME}"
-          test "$(git -C agent-core describe --tags --exact-match)" = "${GITHUB_REF_NAME}"
+          test "$(git rev-parse HEAD)" = \
+            "$(git rev-list -n 1 "refs/tags/${GITHUB_REF_NAME}")"
+          test "$(git -C agent-core rev-parse HEAD)" = \
+            "$(git -C agent-core rev-list -n 1 "refs/tags/${GITHUB_REF_NAME}")"
 
       - name: Enforce release isolation policy
         run: ./scripts/test-release-policy.sh
