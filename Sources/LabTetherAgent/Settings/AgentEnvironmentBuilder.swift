@@ -7,6 +7,9 @@ enum AgentEnvironmentBuilder {
 
         if let normalizedWS = settings.normalizedHubWebSocketURL() {
             env["LABTETHER_WS_URL"] = normalizedWS
+            if allowsLoopbackOutbound(for: normalizedWS) {
+                env["LABTETHER_OUTBOUND_ALLOW_LOOPBACK"] = "true"
+            }
             // Derive HTTP API base URL from WS URL for heartbeat fallback
             // ws://host:8080/ws/agent -> http://host:8080
             var apiBase = normalizedWS
@@ -133,5 +136,22 @@ enum AgentEnvironmentBuilder {
         }
 
         return env
+    }
+
+    static func allowsLoopbackOutbound(for normalizedWebSocketURL: String) -> Bool {
+        guard let components = URLComponents(string: normalizedWebSocketURL),
+              var host = components.host?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !host.isEmpty
+        else {
+            return false
+        }
+        if host.hasPrefix("[") && host.hasSuffix("]") {
+            host.removeFirst()
+            host.removeLast()
+        }
+        if host.caseInsensitiveCompare("localhost") == .orderedSame {
+            return true
+        }
+        return host == "127.0.0.1" || host == "::1"
     }
 }
