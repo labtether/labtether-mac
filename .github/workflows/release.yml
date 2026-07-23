@@ -1,23 +1,21 @@
-name: Release
+name: Release Source Verification
 
 on:
   push:
     tags: ["v*"]
 
 permissions:
-  contents: write
-  id-token: write
-  attestations: write
-  artifact-metadata: write
+  contents: read
 
 jobs:
-  build:
-    runs-on: macos-14
-    timeout-minutes: 30
+  verify-source:
+    runs-on: macos-15
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - name: Check out matching bundled agent core
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -26,160 +24,52 @@ jobs:
           ref: ${{ github.ref_name }}
           path: agent-core
           persist-credentials: false
+          fetch-depth: 0
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: agent-core/go.mod
+          cache: false
 
-      - name: Resolve version from tag
-        id: meta
+      - name: Verify matching immutable source tags
         run: |
-          version="${GITHUB_REF_NAME#v}"
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          [[ "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "$(git describe --tags --exact-match)" = "${GITHUB_REF_NAME}"
+          test "$(git -C agent-core describe --tags --exact-match)" = "${GITHUB_REF_NAME}"
 
-      - name: Build universal application bundle
+      - name: Enforce release isolation policy
+        run: ./scripts/test-release-policy.sh
+
+      - name: Run Swift tests
+        run: |
+          mkdir -p "${RUNNER_TEMP}/swift-tests"
+          swift test --scratch-path "${RUNNER_TEMP}/swift-tests"
+
+      - name: Run bundled agent gates
+        working-directory: agent-core
+        run: |
+          go test ./...
+          go test -race ./...
+          go vet ./...
+
+      - name: Build and validate unsigned universal source artifact
         env:
           LABTETHER_AGENT_REPO: ${{ github.workspace }}/agent-core
           LABTETHER_AGENT_VERSION: ${{ github.ref_name }}
-          LABTETHER_APP_VERSION: ${{ steps.meta.outputs.version }}
+          LABTETHER_APP_VERSION: ${{ github.ref_name }}
           LABTETHER_APP_BUILD_NUMBER: ${{ github.run_number }}
-        run: >-
-          ./scripts/build-app.sh
-          --configuration release
-          --universal
-          --output-dir "${RUNNER_TEMP}/release-stage"
-          --no-sign
-
-      - name: Sign, notarize, and package application bundle
-        env:
-          MACOS_DEVELOPER_ID_APPLICATION_CERT_P12_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_APPLICATION_CERT_P12_BASE64 }}
-          MACOS_DEVELOPER_ID_APPLICATION_CERT_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_APPLICATION_CERT_PASSWORD }}
-          MACOS_DEVELOPER_ID_APPLICATION_IDENTITY: ${{ secrets.MACOS_DEVELOPER_ID_APPLICATION_IDENTITY }}
-          MACOS_NOTARY_API_KEY_P8_BASE64: ${{ secrets.MACOS_NOTARY_API_KEY_P8_BASE64 }}
-          MACOS_NOTARY_API_KEY_ID: ${{ secrets.MACOS_NOTARY_API_KEY_ID }}
-          MACOS_NOTARY_API_ISSUER_ID: ${{ secrets.MACOS_NOTARY_API_ISSUER_ID }}
+          LABTETHER_SWIFT_SCRATCH_PATH: ${{ runner.temp }}/swift-release
         run: |
-          set -euo pipefail
-          umask 077
+          mkdir -p "${LABTETHER_SWIFT_SCRATCH_PATH}" "${RUNNER_TEMP}/source-verification"
+          LABTETHER_APP_VERSION="${LABTETHER_APP_VERSION#v}" \
+            ./scripts/build-app.sh \
+              --configuration release \
+              --universal \
+              --output-dir "${RUNNER_TEMP}/source-verification" \
+              --no-sign
 
-          : "${MACOS_DEVELOPER_ID_APPLICATION_CERT_P12_BASE64:?repository secret is required}"
-          : "${MACOS_DEVELOPER_ID_APPLICATION_CERT_PASSWORD:?repository secret is required}"
-          : "${MACOS_DEVELOPER_ID_APPLICATION_IDENTITY:?repository secret is required}"
-          : "${MACOS_NOTARY_API_KEY_P8_BASE64:?repository secret is required}"
-          : "${MACOS_NOTARY_API_KEY_ID:?repository secret is required}"
-          : "${MACOS_NOTARY_API_ISSUER_ID:?repository secret is required}"
-
-          case "${MACOS_DEVELOPER_ID_APPLICATION_IDENTITY}" in
-            "Developer ID Application: "*) ;;
-            *)
-              echo "::error::MACOS_DEVELOPER_ID_APPLICATION_IDENTITY must select a Developer ID Application certificate"
-              exit 1
-              ;;
-          esac
-
-          STAGE_DIR="${RUNNER_TEMP}/release-stage"
-          APP_PATH="${STAGE_DIR}/LabTether Agent.app"
-          CHILD_PATH="${APP_PATH}/Contents/Resources/labtether-agent"
-          HOST_PATH="${APP_PATH}/Contents/MacOS/LabTetherAgent"
-          SIGNING_DIR="${RUNNER_TEMP}/release-signing"
-          KEYCHAIN_PATH="${SIGNING_DIR}/release.keychain-db"
-          CERTIFICATE_PATH="${SIGNING_DIR}/developer-id-application.p12"
-          NOTARY_KEY_PATH="${SIGNING_DIR}/AuthKey.p8"
-          NOTARY_ARCHIVE="${SIGNING_DIR}/notarization-submission.zip"
-          NOTARY_RESULT="${SIGNING_DIR}/notarization-result.json"
-          KEYCHAIN_PASSWORD="$(openssl rand -hex 32)"
-
-          cleanup() {
-            security delete-keychain "${KEYCHAIN_PATH}" >/dev/null 2>&1 || true
-            rm -rf "${SIGNING_DIR}"
-          }
-          trap cleanup EXIT
-
-          mkdir -p "${STAGE_DIR}" "${SIGNING_DIR}"
-          printf '%s' "${MACOS_DEVELOPER_ID_APPLICATION_CERT_P12_BASE64}" | base64 -D > "${CERTIFICATE_PATH}"
-          printf '%s' "${MACOS_NOTARY_API_KEY_P8_BASE64}" | base64 -D > "${NOTARY_KEY_PATH}"
-          chmod 600 "${CERTIFICATE_PATH}" "${NOTARY_KEY_PATH}"
-
-          security create-keychain -p "${KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
-          security set-keychain-settings -lut 21600 "${KEYCHAIN_PATH}"
-          security unlock-keychain -p "${KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
-          security import "${CERTIFICATE_PATH}" \
-            -k "${KEYCHAIN_PATH}" \
-            -P "${MACOS_DEVELOPER_ID_APPLICATION_CERT_PASSWORD}" \
-            -T /usr/bin/codesign
-          security set-key-partition-list \
-            -S apple-tool:,apple:,codesign: \
-            -s \
-            -k "${KEYCHAIN_PASSWORD}" \
-            "${KEYCHAIN_PATH}" >/dev/null
-
-          if ! security find-identity -v -p codesigning "${KEYCHAIN_PATH}" \
-            | grep -Fq "${MACOS_DEVELOPER_ID_APPLICATION_IDENTITY}"; then
-            echo "::error::configured Developer ID Application identity was not found in the imported certificate"
-            exit 1
-          fi
-
-          codesign \
-            --force \
-            --options runtime \
-            --timestamp \
-            --keychain "${KEYCHAIN_PATH}" \
-            --sign "${MACOS_DEVELOPER_ID_APPLICATION_IDENTITY}" \
-            "${CHILD_PATH}"
-          codesign \
-            --force \
-            --options runtime \
-            --timestamp \
-            --keychain "${KEYCHAIN_PATH}" \
-            --sign "${MACOS_DEVELOPER_ID_APPLICATION_IDENTITY}" \
-            "${HOST_PATH}"
-          codesign \
-            --force \
-            --options runtime \
-            --timestamp \
-            --keychain "${KEYCHAIN_PATH}" \
-            --sign "${MACOS_DEVELOPER_ID_APPLICATION_IDENTITY}" \
-            "${APP_PATH}"
-          ./scripts/validate-app.sh \
-            "${APP_PATH}" \
-            --architectures arm64,x86_64 \
-            --agent-version "${GITHUB_REF_NAME}" \
-            --require-signature
-
-          ditto -c -k --keepParent \
-            "${APP_PATH}" \
-            "${NOTARY_ARCHIVE}"
-          xcrun notarytool submit "${NOTARY_ARCHIVE}" \
-            --key "${NOTARY_KEY_PATH}" \
-            --key-id "${MACOS_NOTARY_API_KEY_ID}" \
-            --issuer "${MACOS_NOTARY_API_ISSUER_ID}" \
-            --wait \
-            --output-format json > "${NOTARY_RESULT}"
-
-          notary_status="$(plutil -extract status raw "${NOTARY_RESULT}")"
-          if [[ "${notary_status}" != "Accepted" ]]; then
-            echo "::error::Apple notarization did not return Accepted"
-            exit 1
-          fi
-
-          xcrun stapler staple "${APP_PATH}"
-          xcrun stapler validate "${APP_PATH}"
-          codesign --verify --deep --strict --verbose=2 "${APP_PATH}"
-          spctl --assess --type execute --verbose=4 "${APP_PATH}"
-
-          cd "${STAGE_DIR}"
-          tar czf "labtether-agent-macos-universal.tar.gz" "LabTether Agent.app"
-          shasum -a 256 "labtether-agent-macos-universal.tar.gz" > "labtether-agent-macos-universal.tar.gz.sha256"
-
-      - name: Attest release provenance
-        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
-        with:
-          subject-path: ${{ runner.temp }}/release-stage/labtether-agent-macos-universal.tar.gz
-
-      - name: Upload to GitHub Release
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
-        with:
-          name: "LabTether Mac Agent ${{ steps.meta.outputs.version }}"
-          files: |
-            ${{ runner.temp }}/release-stage/labtether-agent-macos-universal.tar.gz
-            ${{ runner.temp }}/release-stage/labtether-agent-macos-universal.tar.gz.sha256
+      - name: Confirm source checkouts stayed clean
+        run: |
+          test "$(git status --porcelain=v1 --untracked-files=all)" = "?? agent-core/"
+          test -z "$(git -C agent-core status --porcelain=v1 --untracked-files=all)"
