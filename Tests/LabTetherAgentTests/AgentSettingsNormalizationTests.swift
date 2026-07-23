@@ -27,6 +27,13 @@ final class AgentSettingsNormalizationTests: XCTestCase {
         XCTAssertNil(AgentSettingsNormalization.canonicalHubWebSocketURL(from: "wss://hub.example.com/ws/agent#frag"))
     }
 
+    func testLoopbackHubURLsAllowLoopbackOutbound() {
+        XCTAssertTrue(AgentEnvironmentBuilder.allowsLoopbackOutbound(for: "wss://localhost:29443/ws/agent"))
+        XCTAssertTrue(AgentEnvironmentBuilder.allowsLoopbackOutbound(for: "wss://127.0.0.1:29443/ws/agent"))
+        XCTAssertTrue(AgentEnvironmentBuilder.allowsLoopbackOutbound(for: "wss://[::1]:29443/ws/agent"))
+        XCTAssertFalse(AgentEnvironmentBuilder.allowsLoopbackOutbound(for: "wss://hub.example.com/ws/agent"))
+    }
+
     func testDockerEndpointValidationAllowsAbsolutePathAndHTTPSURL() {
         XCTAssertNil(AgentSettingsNormalization.dockerEndpointValidationError("/var/run/docker.sock"))
         XCTAssertNil(AgentSettingsNormalization.dockerEndpointValidationError("unix:///var/run/docker.sock"))
