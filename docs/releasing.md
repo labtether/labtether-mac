@@ -5,13 +5,17 @@ Mac. GitHub Actions verifies tagged source and builds an unsigned universal app,
 but it does not receive signing certificates, private keys, notary credentials,
 signed archives, or permission to publish a release.
 
-The release is intentionally split into two independently confirmed commands:
+The release is intentionally split into three independently confirmed commands:
 
 1. `release-local.sh` tests two clean, identically tagged checkouts, builds,
    signs, notarizes, staples, packages, re-extracts, and verifies the app.
-2. `publish-local-release.sh` re-verifies the exact local bytes and remote tags,
-   creates a draft containing exactly the archive and checksum, checks that
-   allowlist, and only then publishes it.
+2. `publish-local-release.sh --confirm-draft` re-verifies the exact local bytes
+   and remote tags, creates a draft containing exactly the archive and checksum,
+   verifies their GitHub names, sizes, uploaded states, and SHA-256 digests, then
+   exits while the release is still a draft.
+3. After independent inspection, a separate
+   `publish-local-release.sh --confirm-publish` invocation repeats every local
+   check, freshly verifies the existing GitHub draft, and only then publishes.
 
 Neither script imports certificate files. The signing identity and the
 notarytool credential profile must already exist in the local Keychain. All
@@ -89,8 +93,20 @@ Gatekeeper assessment all pass again after extracting the final archive.
 ## Publish the exact verified bytes
 
 Push both matching tags, allow the read-only source verification workflow to
-pass, and review the two local files. Publication requires a separate exact-tag
+pass, and review the two local files. Draft creation requires its own exact-tag
 confirmation:
+
+```bash
+./scripts/publish-local-release.sh \
+  --tag vX.Y.Z \
+  --agent-repo /absolute/path/to/labtether-agent \
+  --release-dir "${release_output}" \
+  --confirm-draft vX.Y.Z
+```
+
+The command exits after proving the release is still a draft and that both
+GitHub assets exactly match the verified local names, sizes, uploaded states,
+and SHA-256 digests. Inspect the draft independently. Then use a new invocation:
 
 ```bash
 ./scripts/publish-local-release.sh \
@@ -100,12 +116,14 @@ confirmation:
   --confirm-publish vX.Y.Z
 ```
 
-The publisher refuses a dirty checkout, missing or mismatched remote tag, an
-existing release, any extra release-directory entry, any symlink, a malformed
-checksum, failed signing/notarization/Gatekeeper validation, or anything other
-than the two expected uploaded assets. If draft creation or inspection stops
-partway through, an unpublished draft may remain for manual inspection; the
-script never publishes an unverified draft.
+The publisher refuses a dirty checkout, missing or mismatched remote tag, any
+extra release-directory entry, any symlink, a malformed checksum, failed
+signing/notarization/Gatekeeper validation, or anything other than the two
+expected uploaded assets. Draft creation refuses an existing release;
+publication requires an existing exact draft. The two confirmations are
+mutually exclusive, so one invocation cannot both create and publish a release.
+If draft creation or inspection stops partway through, an unpublished draft may
+remain for manual inspection; the script never publishes an unverified draft.
 
 ## Release boundary
 

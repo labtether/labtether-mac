@@ -8,17 +8,20 @@ TAG=""
 AGENT_REPO_INPUT=""
 RELEASE_DIR_INPUT=""
 REPOSITORY="labtether/labtether-mac"
+CONFIRM_DRAFT=""
 CONFIRM_PUBLISH=""
 DRY_RUN=false
 
 DRAFT_MAY_EXIST=false
-PUBLISH_COMPLETE=false
 ARCHIVE_NAME="labtether-agent-macos-universal.tar.gz"
 CHECKSUM_NAME="${ARCHIVE_NAME}.sha256"
 
+# shellcheck source=scripts/release-readback-common.sh
+source "${SCRIPT_DIR}/release-readback-common.sh"
+
 cleanup() {
-  if [[ "${DRAFT_MAY_EXIST}" == "true" && "${PUBLISH_COMPLETE}" != "true" ]]; then
-    printf 'Publication stopped before completion; an unpublished draft may require manual inspection.\n' >&2
+  if [[ "${DRAFT_MAY_EXIST}" == "true" ]]; then
+    printf 'Draft creation stopped before verification; an unpublished draft may require manual inspection.\n' >&2
   fi
 }
 trap cleanup EXIT
@@ -32,7 +35,8 @@ fail() {
 usage() {
   printf '%s\n' \
     'Usage: scripts/publish-local-release.sh --tag vX.Y.Z --agent-repo PATH' \
-    '       --release-dir PATH --confirm-publish vX.Y.Z' \
+    '       --release-dir PATH' \
+    '       (--confirm-draft vX.Y.Z | --confirm-publish vX.Y.Z)' \
     '       [--repository OWNER/REPO] [--dry-run]' >&2
 }
 
@@ -98,12 +102,8 @@ remote_tag_commit() {
   fi
 }
 
-release_summary() {
-  gh release view "${TAG}" \
-    --repo "${REPOSITORY}" \
-    --json isDraft,assets \
-    --jq '[.isDraft, (.assets | length), ([.assets[].name] | sort | join(","))] | @tsv' \
-    2>/dev/null
+sha256_file() {
+  shasum -a 256 -- "$1" | awk '{print tolower($1)}'
 }
 
 while [[ $# -gt 0 ]]; do
@@ -112,6 +112,7 @@ while [[ $# -gt 0 ]]; do
     --agent-repo) AGENT_REPO_INPUT="${2:?--agent-repo requires a value}"; shift 2 ;;
     --release-dir) RELEASE_DIR_INPUT="${2:?--release-dir requires a value}"; shift 2 ;;
     --repository) REPOSITORY="${2:?--repository requires a value}"; shift 2 ;;
+    --confirm-draft) CONFIRM_DRAFT="${2:?--confirm-draft requires a value}"; shift 2 ;;
     --confirm-publish) CONFIRM_PUBLISH="${2:?--confirm-publish requires a value}"; shift 2 ;;
     --dry-run) DRY_RUN=true; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -171,9 +172,20 @@ if [[ "${DRY_RUN}" == "true" ]]; then
   exit 0
 fi
 
-[[ "${CONFIRM_PUBLISH}" == "${TAG}" ]] \
-  || fail "--confirm-publish must exactly match the release tag"
-for command_name in gh git; do
+if [[ -n "${CONFIRM_DRAFT}" && -n "${CONFIRM_PUBLISH}" ]]; then
+  fail "draft creation and publication require separate invocations"
+elif [[ -n "${CONFIRM_DRAFT}" ]]; then
+  [[ "${CONFIRM_DRAFT}" == "${TAG}" ]] \
+    || fail "--confirm-draft must exactly match the release tag"
+  RELEASE_ACTION="draft"
+elif [[ -n "${CONFIRM_PUBLISH}" ]]; then
+  [[ "${CONFIRM_PUBLISH}" == "${TAG}" ]] \
+    || fail "--confirm-publish must exactly match the release tag"
+  RELEASE_ACTION="publish"
+else
+  fail "choose exactly one of --confirm-draft or --confirm-publish"
+fi
+for command_name in gh git jq shasum; do
   command -v "${command_name}" >/dev/null 2>&1 || fail "a required local publication command is unavailable"
 done
 
@@ -201,43 +213,53 @@ remote_agent_commit="$(remote_tag_commit "labtether/labtether-agent")" \
 [[ "${remote_agent_commit}" == "${AGENT_COMMIT}" ]] \
   || fail "the remote agent tag does not match the verified local commit"
 
-if gh release view "${TAG}" --repo "${REPOSITORY}" >/dev/null 2>&1; then
-  fail "a release already exists for the requested tag"
-fi
 if ! gh api "repos/${REPOSITORY}" >/dev/null 2>&1; then
   fail "the publication repository could not be verified"
 fi
 
-DRAFT_MAY_EXIST=true
-if ! gh release create "${TAG}" \
-  "${ARCHIVE_PATH}" \
-  "${CHECKSUM_PATH}" \
-  --repo "${REPOSITORY}" \
-  --draft \
-  --verify-tag \
-  --title "LabTether Mac Agent ${TAG#v}" \
-  --notes 'Signed and notarized universal macOS agent. Verify the companion SHA-256 file before installation.' \
-  >/dev/null 2>&1; then
-  fail "creating the two-asset draft release failed"
+ARCHIVE_HASH="$(sha256_file "${ARCHIVE_PATH}")"
+CHECKSUM_HASH="$(sha256_file "${CHECKSUM_PATH}")"
+ARCHIVE_SIZE="$(stat -f '%z' -- "${ARCHIVE_PATH}")"
+CHECKSUM_SIZE="$(stat -f '%z' -- "${CHECKSUM_PATH}")"
+
+if [[ "${RELEASE_ACTION}" == "draft" ]]; then
+  if gh release view "${TAG}" --repo "${REPOSITORY}" >/dev/null 2>&1; then
+    fail "a release already exists for the requested tag"
+  fi
+  DRAFT_MAY_EXIST=true
+  if ! gh release create "${TAG}" \
+    "${ARCHIVE_PATH}" \
+    "${CHECKSUM_PATH}" \
+    --repo "${REPOSITORY}" \
+    --draft \
+    --verify-tag \
+    --title "LabTether Mac Agent ${TAG#v}" \
+    --notes 'Signed and notarized universal macOS agent. Verify the companion SHA-256 file before installation.' \
+    >/dev/null 2>&1; then
+    fail "creating the two-asset draft release failed"
+  fi
+  draft_json="$(gh api "repos/${REPOSITORY}/releases/tags/${TAG}")" \
+    || fail "the draft release could not be inspected"
+  validate_github_release_asset_readback \
+    "${draft_json}" true "${ARCHIVE_HASH}" "${CHECKSUM_HASH}" "${ARCHIVE_SIZE}" "${CHECKSUM_SIZE}" \
+    || fail "the draft release does not exactly match the verified local assets"
+  DRAFT_MAY_EXIST=false
+  printf 'Created and verified the two-asset draft for %s. Inspect it, then use a separate --confirm-publish invocation.\n' "${TAG}"
+  exit 0
 fi
 
-draft_summary="$(release_summary)" || fail "the draft release could not be inspected; it was not published"
-IFS=$'\t' read -r draft_flag draft_asset_count draft_asset_names <<<"${draft_summary}"
-expected_asset_names="${ARCHIVE_NAME},${CHECKSUM_NAME}"
-[[ "${draft_flag}" == "true" ]] || fail "the newly created release is not a draft"
-[[ "${draft_asset_count}" == "2" ]] || fail "the draft does not contain exactly two uploaded assets"
-[[ "${draft_asset_names}" == "${expected_asset_names}" ]] \
-  || fail "the draft asset allowlist does not match the two verified files"
-
+draft_json="$(gh api "repos/${REPOSITORY}/releases/tags/${TAG}")" \
+  || fail "an existing draft release is required before publication"
+validate_github_release_asset_readback \
+  "${draft_json}" true "${ARCHIVE_HASH}" "${CHECKSUM_HASH}" "${ARCHIVE_SIZE}" "${CHECKSUM_SIZE}" \
+  || fail "fresh draft inspection does not match the verified local assets"
 if ! gh release edit "${TAG}" --repo "${REPOSITORY}" --draft=false >/dev/null 2>&1; then
   fail "the verified draft could not be published"
 fi
-published_summary="$(release_summary)" || fail "the published release could not be inspected"
-IFS=$'\t' read -r published_flag published_asset_count published_asset_names <<<"${published_summary}"
-[[ "${published_flag}" == "false" ]] || fail "the release still reports draft state"
-[[ "${published_asset_count}" == "2" ]] || fail "the published release does not contain exactly two uploaded assets"
-[[ "${published_asset_names}" == "${expected_asset_names}" ]] \
-  || fail "the published release asset allowlist changed unexpectedly"
-PUBLISH_COMPLETE=true
+published_json="$(gh api "repos/${REPOSITORY}/releases/tags/${TAG}")" \
+  || fail "the published release could not be inspected"
+validate_github_release_asset_readback \
+  "${published_json}" false "${ARCHIVE_HASH}" "${CHECKSUM_HASH}" "${ARCHIVE_SIZE}" "${CHECKSUM_SIZE}" \
+  || fail "the published release does not exactly match the verified local assets"
 
-printf 'Published the verified two-asset local macOS release for %s.\n' "${TAG}"
+printf 'Published the independently re-inspected two-asset macOS release for %s.\n' "${TAG}"
