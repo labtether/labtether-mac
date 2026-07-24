@@ -28,7 +28,11 @@ struct AgentHeroPresentation: Equatable {
         let trimmedStatusError = trimmed(statusLastError)
         let trimmedAPIError = trimmed(apiLastError)
 
-        if processIsStarting || statusState == .starting {
+        // The wrapper marks the process as `.starting` immediately after launch
+        // and log parsing may leave that state behind. Once the child process is
+        // running and its authenticated local API is reachable, that API is the
+        // fresher source of truth for connected/auth-failed/disconnected state.
+        if processIsStarting || (statusState == .starting && (!processIsRunning || !isReachable)) {
             return AgentHeroPresentation(
                 label: "Starting",
                 subtitle: "Launching agent process...",

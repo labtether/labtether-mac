@@ -37,18 +37,20 @@ enum ConnectionTester {
 
     // MARK: URL helpers
 
-    /// Converts a WebSocket hub URL to its HTTP base URL (origin only — no path, query, or fragment).
+    /// Canonicalizes an accepted hub URL and converts it to its HTTP base URL
+    /// (origin only — no path, query, or fragment).
     ///
     /// - `wss://` becomes `https://`
     /// - `ws://` becomes `http://`
+    /// - `https://`, `http://`, and bare hosts are normalized exactly as they
+    ///   are by `AgentSettings` before conversion.
     /// - Any path is stripped.
     /// - User information, queries, and fragments are rejected instead of silently
     ///   changing which endpoint is verified.
-    /// - Returns `nil` for any input that is not a valid `ws://` or `wss://` URL.
+    /// - Returns `nil` for any input that is not a valid supported hub URL.
     static func httpBaseURL(from wsURLString: String) -> URL? {
-        let normalized = wsURLString.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalized.isEmpty,
-              var components = URLComponents(string: normalized),
+        guard let canonical = AgentSettingsNormalization.canonicalHubWebSocketURL(from: wsURLString),
+              var components = URLComponents(string: canonical),
               let scheme = components.scheme?.lowercased()
         else { return nil }
 
@@ -555,6 +557,25 @@ private final class HubProbeSessionDelegate: NSObject, URLSessionDelegate, URLSe
     func urlSession(
         _ session: URLSession,
         didReceive challenge: URLAuthenticationChallenge,
+        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+    ) {
+        handle(challenge, completionHandler: completionHandler)
+    }
+
+    // URLSession.bytes(for:) delivers server-trust challenges through the
+    // task-level delegate callback on macOS. Keep the session-level callback
+    // above for the other URLSession APIs, and route both through one policy.
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didReceive challenge: URLAuthenticationChallenge,
+        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+    ) {
+        handle(challenge, completionHandler: completionHandler)
+    }
+
+    private func handle(
+        _ challenge: URLAuthenticationChallenge,
         completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
         guard tlsSkipVerify,
