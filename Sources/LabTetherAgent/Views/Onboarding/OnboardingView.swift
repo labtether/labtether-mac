@@ -117,7 +117,7 @@ final class OnboardingState: ObservableObject {
 /// asset identity before starting the agent for the first time.
 ///
 /// The view is intended to be hosted in a dedicated SwiftUI `Window` scene and
-/// dismissed once `applyToSettings` + `agentProcess.start()` have been called.
+/// dismissed after applying settings and starting or restarting the child.
 struct OnboardingView: View {
 
     // MARK: Dependencies
@@ -128,6 +128,7 @@ struct OnboardingView: View {
     // MARK: Private state
 
     @StateObject private var state = OnboardingState()
+    @Environment(\.dismiss) private var dismiss
 
     // MARK: Body
 
@@ -242,7 +243,12 @@ struct OnboardingView: View {
 
     private func finish() {
         state.applyToSettings(settings)
-        agentProcess.start()
+        if agentProcess.isRunning {
+            agentProcess.restart()
+        } else {
+            agentProcess.start()
+        }
+        dismiss()
     }
 }
 

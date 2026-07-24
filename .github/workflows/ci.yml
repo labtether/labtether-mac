@@ -1,15 +1,78 @@
 name: CI
 on:
+  workflow_dispatch:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
 
 permissions:
   contents: read
 
 jobs:
-  build-and-test:
+  qa-select:
+    name: Select risk-based QA contracts
     runs-on: macos-15
+    timeout-minutes: 5
+    outputs:
+      mac_hub_transport: ${{ steps.select.outputs.mac_hub_transport }}
+      mac_installed_app: ${{ steps.select.outputs.mac_installed_app }}
+      selected_json: ${{ steps.select.outputs.selected_json }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Test QA contract selector
+        run: python3 -m unittest scripts/ci/test_select_qa_contracts.py
+      - name: Select contracts
+        id: select
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          FULL_MODE: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') }}
+        run: |
+          set -euo pipefail
+          selector=(python3 scripts/ci/select-qa-contracts.py)
+          if [[ "${FULL_MODE}" == "true" || -z "${BASE_SHA}" || "${BASE_SHA}" =~ ^0+$ ]]; then
+            selector+=(--full)
+          else
+            selector+=(--base "${BASE_SHA}" --head "${GITHUB_SHA}")
+          fi
+          "${selector[@]}"
+
+  build-and-test:
+    name: Fast Swift build and tests
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Enforce release isolation policy
+        run: ./scripts/test-release-policy.sh
+      - name: Build Swift host
+        run: swift build
+      - name: Run Swift tests
+        run: swift test
+
+  mac-hub-transport:
+    name: Contract / Native Mac-to-Hub transport
+    needs: qa-select
+    if: needs.qa-select.outputs.mac_hub_transport == 'true'
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Run complete native behavioral suite
+        run: swift test
+
+  mac-installed-app:
+    name: Contract / Installed macOS application bundle
+    needs: qa-select
+    if: needs.qa-select.outputs.mac_installed_app == 'true'
+    runs-on: macos-15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -18,19 +81,13 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           repository: labtether/labtether-agent
-          ref: main
+          ref: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'main' }}
           path: agent-core
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: agent-core/go.mod
           cache: false
-      - name: Enforce release isolation policy
-        run: ./scripts/test-release-policy.sh
-      - name: Build Swift host
-        run: swift build
-      - name: Run Swift tests
-        run: swift test
       - name: Build and validate application bundle
         env:
           LABTETHER_AGENT_REPO: ${{ github.workspace }}/agent-core

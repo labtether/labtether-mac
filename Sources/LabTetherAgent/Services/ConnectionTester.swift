@@ -77,23 +77,39 @@ enum ConnectionTester {
         return components.url
     }
 
+    /// Returns the public discovery endpoint used to prove Hub identity.
+    ///
+    /// LabTether's direct API origin serves its identity document at `/`, while
+    /// the unified console ingress owns `/` and redirects it to the localized
+    /// web app. `/api/v1/discover` is deliberately public and returns the same
+    /// canonical Hub identity through both supported origins.
+    static func hubIdentityURL(from wsURLString: String) -> URL? {
+        guard let baseURL = httpBaseURL(from: wsURLString),
+              var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
+        else {
+            return nil
+        }
+        components.path = "/api/v1/discover"
+        return components.url
+    }
+
     // MARK: Quick test
 
-    /// Performs a single HTTP GET to the hub base URL and verifies the canonical
-    /// LabTether hub identity response.
+    /// Performs a single HTTP GET to the public discovery route and verifies
+    /// the canonical LabTether Hub identity response.
     ///
     /// - Parameters:
     ///   - hubURL: The WebSocket hub URL (e.g. `wss://host:port/ws/agent`).
     ///   - tlsSkipVerify: When `true`, server certificate errors are ignored.
     /// - Returns: `.success(responseTimeMs:)` or `.failure(error:)`.
     static func quickTest(hubURL: String, tlsSkipVerify: Bool = false) async -> ConnectionTestResult {
-        guard let baseURL = httpBaseURL(from: hubURL) else {
+        guard let identityURL = hubIdentityURL(from: hubURL) else {
             return .failure(error: "Invalid hub URL.")
         }
 
         let start = Date()
         do {
-            let response = try await probeHub(url: baseURL, tlsSkipVerify: tlsSkipVerify)
+            let response = try await probeHub(url: identityURL, tlsSkipVerify: tlsSkipVerify)
             let elapsed = Int(Date().timeIntervalSince(start) * 1_000)
             if let validationError = hubIdentityValidationError(
                 statusCode: response.statusCode,
@@ -136,6 +152,7 @@ enum ConnectionTester {
         onUpdate(steps)
 
         guard let baseURL = httpBaseURL(from: hubURL),
+              let identityURL = hubIdentityURL(from: hubURL),
               let host = baseURL.host
         else {
             for index in steps.indices {
@@ -199,7 +216,7 @@ enum ConnectionTester {
         // Step 3 — HTTP
         steps[3].status = .running
         onUpdate(steps)
-        let httpResult = await checkHTTP(url: baseURL, tlsSkipVerify: tlsSkipVerify)
+        let httpResult = await checkHTTP(url: identityURL, tlsSkipVerify: tlsSkipVerify)
         steps[3].status = httpResult
         onUpdate(steps)
     }
@@ -251,8 +268,9 @@ enum ConnectionTester {
         case responseTooLarge
     }
 
-    /// Validates the bounded response returned by the hub root endpoint. This is
-    /// internal so the identity contract can be exercised without a live server.
+    /// Validates the bounded response returned by the public discovery
+    /// endpoint. The legacy direct-root identity shape is also accepted so the
+    /// validator remains compatible with older supported Hub responses.
     static func hubIdentityValidationError(
         statusCode: Int?,
         expectedContentLength: Int64 = NSURLSessionTransferSizeUnknown,
@@ -271,12 +289,26 @@ enum ConnectionTester {
         }
 
         guard let object = try? JSONSerialization.jsonObject(with: body),
-              let payload = object as? [String: Any],
-              let service = payload["service"] as? String
+              let payload = object as? [String: Any]
         else {
             return "The endpoint returned an invalid hub response."
         }
-        guard service == "labtether-hub" else {
+
+        if let service = payload["service"] as? String,
+           service == "labtether-hub" {
+            return nil
+        }
+
+        guard let hub = payload["hub"] as? String,
+              hub == "labtether",
+              let wsURL = payload["hub_ws_url"] as? String,
+              let canonicalWSURL = AgentSettingsNormalization.canonicalHubWebSocketURL(from: wsURL),
+              canonicalWSURL == wsURL,
+              let enrollURLString = payload["enroll_url"] as? String,
+              let enrollURL = URL(string: enrollURLString),
+              ["http", "https"].contains(enrollURL.scheme?.lowercased() ?? ""),
+              enrollURL.path == "/api/v1/enroll"
+        else {
             return "The endpoint is not a LabTether hub."
         }
         return nil

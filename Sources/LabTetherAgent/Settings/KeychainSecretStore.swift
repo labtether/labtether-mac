@@ -1,26 +1,93 @@
 import Foundation
+import LocalAuthentication
 import Security
 
 /// Stores sensitive settings in the macOS Keychain.
 enum KeychainSecretStore {
+    private final class LoadResultBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var storedValue: String?
+
+        func store(_ value: String?) {
+            lock.lock()
+            storedValue = value
+            lock.unlock()
+        }
+
+        func value() -> String? {
+            lock.lock()
+            defer { lock.unlock() }
+            return storedValue
+        }
+    }
+
     private static let service = "com.labtether.agent"
+    private static let loadQueue = DispatchQueue(
+        label: "com.labtether.agent.keychain-load",
+        qos: .userInitiated,
+        attributes: .concurrent
+    )
+    private static let loadTimeout: DispatchTimeInterval = .seconds(1)
+    // Raw values of kSecUseAuthenticationUI and
+    // kSecUseAuthenticationUIFail. Apple deprecated the typed constants in
+    // favor of LAContext, but legacy Keychain ACLs can still enter the older
+    // authorization path before consulting that context. Supplying both keeps
+    // launch non-interactive across old and current item formats.
+    private static let authenticationUIQueryKey = "u_AuthUI"
+    private static let authenticationUIFailValue = "u_AuthUIF"
 
     static func load(account: String) -> String? {
-        let query: [String: Any] = [
+        boundedLoad {
+            loadWithoutTimeout(account: account)
+        }
+    }
+
+    static func boundedLoad(
+        timeout: DispatchTimeInterval = loadTimeout,
+        operation: @escaping @Sendable () -> String?
+    ) -> String? {
+        let completion = DispatchSemaphore(value: 0)
+        let result = LoadResultBox()
+        loadQueue.async {
+            result.store(operation())
+            completion.signal()
+        }
+
+        guard completion.wait(timeout: .now() + timeout) == .success else {
+            return nil
+        }
+        return result.value()
+    }
+
+    private static func loadWithoutTimeout(account: String) -> String? {
+        var result: AnyObject?
+        let status = SecItemCopyMatching(loadQuery(account: account) as CFDictionary, &result)
+        guard status == errSecSuccess, let data = result as? Data else {
+            return nil
+        }
+        return String(data: data, encoding: .utf8)
+    }
+
+    static func loadQuery(account: String) -> [String: Any] {
+        let authenticationContext = LAContext()
+        authenticationContext.interactionNotAllowed = true
+
+        return [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecAttrSynchronizable as String: kCFBooleanFalse as Any,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
+            // A stale or externally-created item may require an authorization
+            // prompt. Secret loading happens synchronously during SwiftUI app
+            // construction, before any LabTether window can appear, so such a
+            // prompt would otherwise freeze the entire app launch. Treat an
+            // inaccessible item as unavailable and let the UI surface the
+            // missing credential instead.
+            kSecUseAuthenticationContext as String: authenticationContext,
+            authenticationUIQueryKey: authenticationUIFailValue,
         ]
-
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess, let data = result as? Data else {
-            return nil
-        }
-        return String(data: data, encoding: .utf8)
     }
 
     @discardableResult

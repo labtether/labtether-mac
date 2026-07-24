@@ -4,8 +4,10 @@ import Foundation
 enum AgentEvent: Equatable, Sendable {
     case connected(url: String)
     case reconnecting(delay: String, error: String)
+    case authenticationFailed(error: String)
     case enrolled(assetID: String)
     case enrolling
+    case enrollmentTokenConsumed
     case tokenLoaded(path: String)
     case tokenPersisted(path: String)
     case sshKeyInstalled(user: String)
@@ -46,6 +48,17 @@ struct LogParser: Sendable {
             }
         }
 
+        // agentws: auth failure (<attempts>), retrying in ...: <error>
+        // agentws: AUTH FAILURE (<count> consecutive) — credentials rejected ...
+        //
+        // Both forms are emitted by the Go child. Treat them as an explicit
+        // state transition instead of a generic info line so every native
+        // status surface converges on Auth Failed immediately.
+        if msg.lowercased().hasPrefix("agentws: auth failure") {
+            let detail = String(msg.dropFirst("agentws: ".count))
+            return .authenticationFailed(error: detail)
+        }
+
         // agent: enrolled successfully as <assetID>
         if let assetID = match(msg, prefix: "agent: enrolled successfully as ") {
             return .enrolled(assetID: assetID)
@@ -54,6 +67,13 @@ struct LogParser: Sendable {
         // agent: enrolling with hub...
         if msg == "agent: enrolling with hub..." {
             return .enrolling
+        }
+
+        // Emitted only after the Hub accepted the one-use enrollment token and
+        // the Go child removed its runtime copy. This is the safe point for the
+        // native host to delete its matching Keychain value.
+        if msg == "agent: removed consumed enrollment token file" {
+            return .enrollmentTokenConsumed
         }
 
         // agent: loaded token from <path>

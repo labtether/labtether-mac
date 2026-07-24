@@ -93,7 +93,7 @@ enum MenuBarIconResolver {
             return .starting
         case .stopped:
             return .stopped
-        case .error:
+        case .authFailed, .error:
             return .error
         }
     }

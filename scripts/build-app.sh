@@ -125,7 +125,29 @@ cleanup() {
 }
 trap cleanup EXIT
 
-AGENT_VERSION="${LABTETHER_AGENT_VERSION:-$(git -C "${AGENT_REPO}" describe --tags --always --dirty 2>/dev/null || printf dev)}"
+resolve_agent_version() {
+  local exact_tag
+  exact_tag="$(
+    git -C "${AGENT_REPO}" tag \
+      --points-at HEAD \
+      --list 'v[0-9]*' \
+      --sort=-version:refname 2>/dev/null |
+      sed -n '1p'
+  )"
+
+  if [[ -n "${exact_tag}" ]]; then
+    if [[ -n "$(git -C "${AGENT_REPO}" status --porcelain --untracked-files=normal 2>/dev/null)" ]]; then
+      printf '%s-dirty\n' "${exact_tag}"
+    else
+      printf '%s\n' "${exact_tag}"
+    fi
+    return
+  fi
+
+  git -C "${AGENT_REPO}" describe --tags --always --dirty 2>/dev/null || printf 'dev\n'
+}
+
+AGENT_VERSION="${LABTETHER_AGENT_VERSION:-$(resolve_agent_version)}"
 APP_VERSION="${LABTETHER_APP_VERSION:-$(plutil -extract CFBundleShortVersionString raw "${REPO_ROOT}/Sources/LabTetherAgent/Resources/Info.plist")}"
 APP_BUILD_NUMBER="${LABTETHER_APP_BUILD_NUMBER:-$(plutil -extract CFBundleVersion raw "${REPO_ROOT}/Sources/LabTetherAgent/Resources/Info.plist")}"
 
