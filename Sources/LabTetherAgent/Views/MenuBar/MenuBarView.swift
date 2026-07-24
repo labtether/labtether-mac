@@ -100,7 +100,10 @@ struct MenuBarView: View {
             MenuBarFooterSection(metadata: apiClient.metadata, agentProcess: agentProcess, settings: settings)
         }
         .background(MenuBarBackground(status: status, agentProcess: agentProcess, runtime: apiClient.runtime))
-        .frame(width: 340)
+        // A ScrollView has no intrinsic height inside MenuBarExtra(.window).
+        // Without an explicit container height macOS collapses the entire
+        // system/connection/actions region, leaving only the hero and footer.
+        .frame(width: 340, height: 560)
         .overlay(alignment: .top) {
             if let toast = copyToast {
                 LTToast(text: toast)

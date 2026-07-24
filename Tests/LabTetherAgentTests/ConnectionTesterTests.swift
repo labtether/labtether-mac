@@ -47,12 +47,25 @@ final class ConnectionTesterTests: XCTestCase {
     }
 
     func testHTTPBaseURLReturnsNilForNonURL() {
-        XCTAssertNil(ConnectionTester.httpBaseURL(from: "not-a-url"))
+        XCTAssertNil(ConnectionTester.httpBaseURL(from: "not a url"))
     }
 
-    func testHTTPBaseURLReturnsNilForHTTPScheme() {
-        // Only ws/wss are valid input schemes
-        XCTAssertNil(ConnectionTester.httpBaseURL(from: "http://example.com/path"))
+    func testHTTPBaseURLCanonicalizesHTTPSchemeInputs() {
+        XCTAssertEqual(
+            ConnectionTester.httpBaseURL(from: "http://example.com/path"),
+            URL(string: "http://example.com")
+        )
+        XCTAssertEqual(
+            ConnectionTester.httpBaseURL(from: "https://example.com/path"),
+            URL(string: "https://example.com")
+        )
+    }
+
+    func testHTTPBaseURLCanonicalizesBareHostInput() {
+        XCTAssertEqual(
+            ConnectionTester.httpBaseURL(from: "hub.example.com:8443"),
+            URL(string: "https://hub.example.com:8443")
+        )
     }
 
     func testHTTPBaseURLWithoutPortProducesNoPort() {

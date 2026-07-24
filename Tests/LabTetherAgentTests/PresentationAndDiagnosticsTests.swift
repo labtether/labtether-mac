@@ -55,6 +55,24 @@ final class AgentHeroPresentationTests: XCTestCase {
         XCTAssertEqual(presentation.subtitle, "15m · all clear")
         XCTAssertEqual(presentation.tone, .ok)
     }
+
+    func testResolveUsesReachableLocalAuthFailureOverStaleStartingState() {
+        let presentation = AgentHeroPresentation.resolve(
+            processIsRunning: true,
+            processIsStarting: false,
+            statusState: .starting,
+            statusLastError: "",
+            statusUptime: "2m",
+            apiUptime: "2m",
+            apiLastError: "Hub rejected the configured token",
+            hubConnectionState: "auth_failed",
+            isReachable: true
+        )
+
+        XCTAssertEqual(presentation.label, "Auth Failed")
+        XCTAssertEqual(presentation.subtitle, "Hub rejected the configured token")
+        XCTAssertEqual(presentation.tone, .bad)
+    }
 }
 
 final class DiagnosticsLogSummaryTests: XCTestCase {
