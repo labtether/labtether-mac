@@ -129,7 +129,9 @@ final class AgentProcess: ObservableObject {
         userInitiatedStop = false
         needsRestart = false
         isStarting = true
-        status.markStarting()
+        status.prepareForLaunch(
+            hubURL: settings.normalizedHubWebSocketURL() ?? settings.hubURL
+        )
 
         // Clean up any orphaned agents from previous runs.
         killOrphanedAgents(matching: binaryPath)
@@ -314,9 +316,8 @@ final class AgentProcess: ObservableObject {
                     notifications.notify(.connectionLost)
                 }
             case .enrolled:
-                settings.clearConsumedEnrollmentTokenPreservingAgentToken()
                 notifications.notify(.enrolled)
-            case .tokenLoaded:
+            case .enrollmentTokenConsumed:
                 settings.clearConsumedEnrollmentTokenPreservingAgentToken()
             default:
                 break

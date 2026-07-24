@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "contracts": {
+    "mac-hub-transport": {
+      "reason": "Native host settings, identity, enrollment, and Hub connection behavior"
+    },
+    "mac-installed-app": {
+      "reason": "Real macOS application bundle with validated Swift host and Go child"
+    }
+  },
+  "high_risk_patterns": [
+    ".github/workflows/**",
+    "Package.swift",
+    "Sources/**",
+    "scripts/**"
+  ],
+  "rules": [
+    {
+      "id": "qa-infrastructure",
+      "reason": "QA selection and workflow changes must exercise every contract they can alter",
+      "patterns": [
+        ".github/workflows/**",
+        "scripts/ci/**"
+      ],
+      "contracts": [
+        "mac-hub-transport",
+        "mac-installed-app"
+      ]
+    },
+    {
+      "id": "packaging-signing",
+      "reason": "Bundle, resource, packaging, or signing changes require real application validation",
+      "patterns": [
+        ".github/workflows/release.yml",
+        "Package.swift",
+        "Sources/LabTetherAgent/Resources/**",
+        "scripts/build-app.sh",
+        "scripts/publish-local-release.sh",
+        "scripts/release-*.sh",
+        "scripts/validate-app.sh",
+        "scripts/verify-release-archive.sh"
+      ],
+      "contracts": [
+        "mac-installed-app"
+      ]
+    },
+    {
+      "id": "permissions-security",
+      "reason": "Keychain, login-item, screen-recording, or security changes require native transport and installed proofs",
+      "patterns": [
+        "Sources/LabTetherAgent/App/LoginItemManager.swift",
+        "Sources/LabTetherAgent/Services/ScreenRecordingPermission.swift",
+        "Sources/LabTetherAgent/Settings/KeychainSecretStore.swift",
+        "Sources/LabTetherAgent/Views/Settings/SettingsSecurityTab.swift"
+      ],
+      "contracts": [
+        "mac-hub-transport",
+        "mac-installed-app"
+      ]
+    },
+    {
+      "id": "network-tls-wss",
+      "reason": "API, process, enrollment, TLS/WSS, or connection changes require shared Hub transport proof",
+      "patterns": [
+        "Sources/LabTetherAgent/API/**",
+        "Sources/LabTetherAgent/Process/**",
+        "Sources/LabTetherAgent/Services/ConnectionTester.swift",
+        "Sources/LabTetherAgent/Settings/AgentEnvironmentBuilder.swift",
+        "Sources/LabTetherAgent/Settings/AgentSettings*.swift",
+        "Sources/LabTetherAgent/State/AgentStatus.swift",
+        "Sources/LabTetherAgent/State/LogParser.swift"
+      ],
+      "contracts": [
+        "mac-hub-transport",
+        "mac-installed-app"
+      ]
+    },
+    {
+      "id": "mac-platform-runtime",
+      "reason": "Native macOS runtime changes require a validated application bundle",
+      "patterns": [
+        "Sources/**"
+      ],
+      "contracts": [
+        "mac-installed-app"
+      ]
+    },
+    {
+      "id": "script-fallback",
+      "reason": "Unclassified macOS build or release scripts still require installed application validation",
+      "patterns": [
+        "scripts/**"
+      ],
+      "contracts": [
+        "mac-installed-app"
+      ]
+    }
+  ]
+}

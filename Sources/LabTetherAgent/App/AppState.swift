@@ -31,6 +31,7 @@ final class AppState: ObservableObject {
 
     private var runningObserver: AnyCancellable?
     private var apiClientObserver: AnyCancellable?
+    private var apiRuntimeObserver: AnyCancellable?
     private var apiMetricsObserver: AnyCancellable?
     private var apiAlertsObserver: AnyCancellable?
     private var popOutVisibilityObserver: AnyCancellable?
@@ -80,6 +81,16 @@ final class AppState: ObservableObject {
         apiClientObserver = apiClient.runtime.objectWillChange
             .sink { [weak self] _ in
                 self?.scheduleMenuBarLabelRefreshIfNeeded()
+            }
+
+        apiRuntimeObserver = apiClient.runtime.$snapshot
+            .removeDuplicates()
+            .sink { [weak self] snapshot in
+                guard let self else { return }
+                self.status.reconcileRuntime(
+                    snapshot,
+                    processIsRunning: self.agentProcess.isRunning
+                )
             }
 
         bandwidthMetricsObserver = apiClient.metrics.$snapshot

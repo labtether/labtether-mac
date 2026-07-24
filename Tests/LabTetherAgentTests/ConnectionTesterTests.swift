@@ -74,10 +74,40 @@ final class ConnectionTesterTests: XCTestCase {
         XCTAssertNil(result.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false)?.port })
     }
 
+    // MARK: - Hub identity URL
+
+    func testHubIdentityURLUsesPublicDiscoveryRouteForDirectOrigin() {
+        XCTAssertEqual(
+            ConnectionTester.hubIdentityURL(from: "wss://hub.example.com:8443/ws/agent"),
+            URL(string: "https://hub.example.com:8443/api/v1/discover")
+        )
+    }
+
+    func testHubIdentityURLUsesPublicDiscoveryRouteForUnifiedConsoleOrigin() {
+        XCTAssertEqual(
+            ConnectionTester.hubIdentityURL(from: "ws://127.0.0.1:23000/ws/agent"),
+            URL(string: "http://127.0.0.1:23000/api/v1/discover")
+        )
+    }
+
     // MARK: - Hub identity response
 
-    func testHubIdentityValidationAcceptsCanonicalRootResponse() throws {
+    func testHubIdentityValidationAcceptsLegacyDirectRootResponse() throws {
         let body = try XCTUnwrap("{\"service\":\"labtether-hub\",\"message\":\"running\"}".data(using: .utf8))
+
+        XCTAssertNil(ConnectionTester.hubIdentityValidationError(statusCode: 200, body: body))
+    }
+
+    func testHubIdentityValidationAcceptsCanonicalDiscoveryResponse() throws {
+        let body = try XCTUnwrap(
+            """
+            {
+              "hub": "labtether",
+              "hub_ws_url": "ws://127.0.0.1:23000/ws/agent",
+              "enroll_url": "http://127.0.0.1:23000/api/v1/enroll"
+            }
+            """.data(using: .utf8)
+        )
 
         XCTAssertNil(ConnectionTester.hubIdentityValidationError(statusCode: 200, body: body))
     }
@@ -95,10 +125,20 @@ final class ConnectionTesterTests: XCTestCase {
         let unrelated = try XCTUnwrap("{\"service\":\"something-else\"}".data(using: .utf8))
         let missingService = try XCTUnwrap("{\"status\":\"ok\"}".data(using: .utf8))
         let malformed = try XCTUnwrap("not-json".data(using: .utf8))
+        let malformedDiscovery = try XCTUnwrap(
+            """
+            {
+              "hub": "labtether",
+              "hub_ws_url": "https://hub.example.com/not-websocket",
+              "enroll_url": "https://hub.example.com/not-enroll"
+            }
+            """.data(using: .utf8)
+        )
 
         XCTAssertNotNil(ConnectionTester.hubIdentityValidationError(statusCode: 200, body: unrelated))
         XCTAssertNotNil(ConnectionTester.hubIdentityValidationError(statusCode: 200, body: missingService))
         XCTAssertNotNil(ConnectionTester.hubIdentityValidationError(statusCode: 200, body: malformed))
+        XCTAssertNotNil(ConnectionTester.hubIdentityValidationError(statusCode: 200, body: malformedDiscovery))
     }
 
     func testHubIdentityValidationRejectsOversizedResponse() {

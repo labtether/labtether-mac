@@ -4,6 +4,7 @@ import Network
 struct LocalAPIRuntimeSnapshot: Equatable {
     var isReachable = false
     var hubConnectionState = "disconnected"
+    var assetID: String?
     var uptime: String?
     var lastError: String?
 }
@@ -259,6 +260,7 @@ final class LocalAPIClient: ObservableObject {
             publishRuntimeSnapshot(
                 isReachable: latestReachable,
                 hubConnectionState: latestHubConnectionState,
+                assetID: nil,
                 uptime: nil,
                 lastError: nil
             )
@@ -272,6 +274,7 @@ final class LocalAPIClient: ObservableObject {
         publishRuntimeSnapshot(
             isReachable: true,
             hubConnectionState: decoded.connectionState ?? (decoded.connected ? "connected" : "disconnected"),
+            assetID: decoded.assetID,
             uptime: decoded.uptime,
             lastError: decoded.lastError
         )
@@ -293,6 +296,7 @@ final class LocalAPIClient: ObservableObject {
     private func publishRuntimeSnapshot(
         isReachable: Bool,
         hubConnectionState: String,
+        assetID: String?,
         uptime: String?,
         lastError: String?
     ) {
@@ -300,6 +304,7 @@ final class LocalAPIClient: ObservableObject {
             LocalAPIRuntimeSnapshot(
                 isReachable: isReachable,
                 hubConnectionState: hubConnectionState,
+                assetID: assetID,
                 uptime: uptime,
                 lastError: lastError
             )
@@ -440,6 +445,7 @@ final class LocalAPIClient: ObservableObject {
             publishRuntimeSnapshot(
                 isReachable: true,
                 hubConnectionState: latestHubConnectionState,
+                assetID: latest.assetID,
                 uptime: latest.uptime,
                 lastError: latest.lastError
             )
@@ -486,6 +492,7 @@ final class LocalAPIClient: ObservableObject {
         publishRuntimeSnapshot(
             isReachable: false,
             hubConnectionState: "auth_failed",
+            assetID: nil,
             uptime: nil,
             lastError: nil
         )

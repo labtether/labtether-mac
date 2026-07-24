@@ -549,7 +549,7 @@ struct LogBufferView: View {
         case .connected:                 return LT.ok
         case .reconnecting, .enrolling: return LT.warn
         case .starting:                  return LT.accent
-        case .stopped, .error:           return LT.bad
+        case .stopped, .authFailed, .error: return LT.bad
         }
     }
 

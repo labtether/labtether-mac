@@ -96,7 +96,8 @@ final class AgentSettings: ObservableObject {
         Self.minimumCredentialConfigured(
             apiToken: apiToken,
             enrollmentToken: enrollmentToken,
-            hasPersistedAgentToken: hasPersistedAgentToken
+            hasPersistedAgentToken: hasPersistedAgentToken,
+            hasPersistedEnrollmentToken: hasPersistedEnrollmentToken
         )
     }
 
@@ -105,6 +106,12 @@ final class AgentSettings: ObservableObject {
     /// only treats a non-empty, private regular file as configured state.
     var hasPersistedAgentToken: Bool {
         Self.hasPrivatePersistedAgentToken(at: tokenFilePath)
+    }
+
+    /// Whether a local installer or automation supplied the private,
+    /// non-empty enrollment-token file consumed by the bundled Go agent.
+    var hasPersistedEnrollmentToken: Bool {
+        Self.hasPrivatePersistedAgentToken(at: enrollmentTokenFilePath)
     }
 
     /// Bump the settings version to signal that a restart may be needed.
@@ -208,11 +215,23 @@ final class AgentSettings: ObservableObject {
     static func minimumCredentialConfigured(
         apiToken: String,
         enrollmentToken: String,
-        hasPersistedAgentToken: Bool
+        hasPersistedAgentToken: Bool,
+        hasPersistedEnrollmentToken: Bool = false
     ) -> Bool {
         !apiToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
             !enrollmentToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-            hasPersistedAgentToken
+            hasPersistedAgentToken ||
+            hasPersistedEnrollmentToken
+    }
+
+    static func runtimeEnrollmentTokenFileAction(
+        enrollmentToken: String,
+        hasPersistedEnrollmentToken: Bool
+    ) -> RuntimeSecretFileAction {
+        if !enrollmentToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return .persist
+        }
+        return hasPersistedEnrollmentToken ? .preserve : .remove
     }
 
     static func hasPrivatePersistedAgentToken(at path: String) -> Bool {

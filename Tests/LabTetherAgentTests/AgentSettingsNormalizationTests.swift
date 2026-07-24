@@ -1,7 +1,38 @@
+import LocalAuthentication
 import XCTest
 @testable import LabTetherAgent
 
 final class AgentSettingsNormalizationTests: XCTestCase {
+    func testKeychainSecretLoadsNeverRequestInteractiveAuthorization() {
+        let query = KeychainSecretStore.loadQuery(account: "enrollmentToken")
+
+        let context = query[kSecUseAuthenticationContext as String] as? LAContext
+        XCTAssertEqual(context?.interactionNotAllowed, true)
+        XCTAssertEqual(query["u_AuthUI"] as? String, "u_AuthUIF")
+    }
+
+    func testKeychainSecretLoadReturnsWhenSecurityFrameworkDoesNot() {
+        let started = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+
+        let result = KeychainSecretStore.boundedLoad(timeout: .milliseconds(20)) {
+            started.signal()
+            release.wait()
+            return "late-secret"
+        }
+
+        XCTAssertEqual(started.wait(timeout: .now()), .success)
+        XCTAssertNil(result)
+        release.signal()
+    }
+
+    func testKeychainSecretLoadReturnsCompletedValue() {
+        XCTAssertEqual(
+            KeychainSecretStore.boundedLoad(timeout: .seconds(1)) { "available-secret" },
+            "available-secret"
+        )
+    }
+
     func testCanonicalHubURLFromBareHost() {
         let result = AgentSettingsNormalization.canonicalHubWebSocketURL(from: "hub.example.com")
         XCTAssertEqual(result, "wss://hub.example.com/ws/agent")
@@ -10,6 +41,23 @@ final class AgentSettingsNormalizationTests: XCTestCase {
     func testCanonicalHubURLConvertsHTTPSAndAddsDefaultPath() {
         let result = AgentSettingsNormalization.canonicalHubWebSocketURL(from: "https://hub.example.com:8443")
         XCTAssertEqual(result, "wss://hub.example.com:8443/ws/agent")
+    }
+
+    func testCanonicalHubURLConvertsHTTPWithoutUpgradingTransport() {
+        let result = AgentSettingsNormalization.canonicalHubWebSocketURL(from: "http://127.0.0.1:23000")
+        XCTAssertEqual(result, "ws://127.0.0.1:23000/ws/agent")
+        let environment = AgentEnvironmentBuilder.hubEnvironment(for: result!)
+        XCTAssertEqual(environment["LABTETHER_WS_URL"], "ws://127.0.0.1:23000/ws/agent")
+        XCTAssertEqual(environment["LABTETHER_API_BASE_URL"], "http://127.0.0.1:23000")
+        XCTAssertEqual(environment["LABTETHER_ALLOW_INSECURE_TRANSPORT"], "true")
+        XCTAssertEqual(environment["LABTETHER_OUTBOUND_ALLOW_LOOPBACK"], "true")
+
+        let secureEnvironment = AgentEnvironmentBuilder.hubEnvironment(
+            for: "wss://hub.example.com/ws/agent"
+        )
+        XCTAssertEqual(secureEnvironment["LABTETHER_API_BASE_URL"], "https://hub.example.com")
+        XCTAssertNil(secureEnvironment["LABTETHER_ALLOW_INSECURE_TRANSPORT"])
+        XCTAssertNil(secureEnvironment["LABTETHER_OUTBOUND_ALLOW_LOOPBACK"])
     }
 
     func testCanonicalHubURLPreservesExplicitPath() {
@@ -150,6 +198,14 @@ final class AgentSettingsNormalizationTests: XCTestCase {
                 hasPersistedAgentToken: false
             )
         )
+        XCTAssertTrue(
+            AgentSettings.minimumCredentialConfigured(
+                apiToken: "",
+                enrollmentToken: "",
+                hasPersistedAgentToken: false,
+                hasPersistedEnrollmentToken: true
+            )
+        )
 
         let tokenFile = FileManager.default.temporaryDirectory
             .appendingPathComponent("labtether-agent-token-\(UUID().uuidString)")
@@ -160,5 +216,29 @@ final class AgentSettingsNormalizationTests: XCTestCase {
 
         try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: tokenFile.path)
         XCTAssertFalse(AgentSettings.hasPrivatePersistedAgentToken(at: tokenFile.path))
+    }
+
+    func testRuntimeEnrollmentTokenFileActionPreservesHeadlessToken() {
+        XCTAssertEqual(
+            AgentSettings.runtimeEnrollmentTokenFileAction(
+                enrollmentToken: "",
+                hasPersistedEnrollmentToken: true
+            ),
+            .preserve
+        )
+        XCTAssertEqual(
+            AgentSettings.runtimeEnrollmentTokenFileAction(
+                enrollmentToken: "one-use-token",
+                hasPersistedEnrollmentToken: true
+            ),
+            .persist
+        )
+        XCTAssertEqual(
+            AgentSettings.runtimeEnrollmentTokenFileAction(
+                enrollmentToken: "",
+                hasPersistedEnrollmentToken: false
+            ),
+            .remove
+        )
     }
 }

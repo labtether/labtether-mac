@@ -118,6 +118,15 @@ struct AgentHeroPresentation: Equatable {
             )
         }
 
+        if statusState == .authFailed {
+            return AgentHeroPresentation(
+                label: "Auth Failed",
+                subtitle: trimmedStatusError ?? "Hub authentication failed",
+                tone: .bad,
+                breatheDuration: 1.5
+            )
+        }
+
         if statusState == .error {
             return AgentHeroPresentation(
                 label: "Error",

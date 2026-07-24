@@ -8,6 +8,7 @@ enum ConnectionState: String {
     case connected = "Connected"
     case reconnecting = "Reconnecting"
     case enrolling = "Enrolling"
+    case authFailed = "Auth Failed"
     case error = "Error"
 
     var sfSymbol: String {
@@ -15,6 +16,7 @@ enum ConnectionState: String {
         case .connected:    return "antenna.radiowaves.left.and.right"
         case .reconnecting: return "arrow.triangle.2.circlepath"
         case .enrolling:    return "arrow.triangle.2.circlepath"
+        case .authFailed:   return "lock.slash.fill"
         case .starting:     return "circle.dotted"
         case .stopped:      return "poweroff"
         case .error:        return "antenna.radiowaves.left.and.right.slash"
@@ -26,6 +28,7 @@ enum ConnectionState: String {
         case .connected:    return LT.ok
         case .reconnecting: return LT.warn
         case .enrolling:    return LT.warn
+        case .authFailed:   return LT.bad
         case .starting:     return LT.accent
         case .stopped:      return LT.textMuted
         case .error:        return LT.bad
@@ -123,9 +126,17 @@ final class AgentStatus: ObservableObject {
             assignIfChanged(\.state, .enrolling)
             setLastEvent("Enrolling with hub...")
 
+        case .authenticationFailed(let error):
+            assignIfChanged(\.state, .authFailed)
+            assignIfChanged(\.lastError, error)
+            setLastEvent("Hub authentication failed")
+
         case .enrolled(let id):
             assignIfChanged(\.assetID, id)
             setLastEvent("Enrolled as \(id)")
+
+        case .enrollmentTokenConsumed:
+            setLastEvent("Enrollment token consumed")
 
         case .tokenLoaded(let path):
             setLastEvent("Token loaded from \(path)")
@@ -182,6 +193,72 @@ final class AgentStatus: ObservableObject {
         case .unknown:
             break
         }
+    }
+
+    /// Reconciles wrapper state with the authenticated child API, which is the
+    /// authoritative source once the child process is running. Log parsing is
+    /// still used for immediate transitions and rich event text, but it must
+    /// not leave Settings or Logs stuck on "Starting" while the menu panel is
+    /// already showing a newer Hub connection state.
+    func reconcileRuntime(_ snapshot: LocalAPIRuntimeSnapshot, processIsRunning: Bool) {
+        guard processIsRunning else { return }
+
+        let hubConnectionState = snapshot.hubConnectionState
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+
+        if snapshot.isReachable,
+           hubConnectionState == "connected",
+           let assetID = snapshot.assetID?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !assetID.isEmpty {
+            assignIfChanged(\.assetID, assetID)
+        }
+
+        switch hubConnectionState {
+        case "connected" where snapshot.isReachable:
+            assignIfChanged(\.state, .connected)
+            assignIfChanged(\.lastError, "")
+
+        case "connecting":
+            assignIfChanged(\.state, .reconnecting)
+            if let error = snapshot.lastError?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !error.isEmpty {
+                assignIfChanged(\.lastError, error)
+            }
+
+        case "auth_failed":
+            assignIfChanged(\.state, .authFailed)
+            let error = snapshot.lastError?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let error, !error.isEmpty {
+                assignIfChanged(\.lastError, error)
+            } else {
+                assignIfChanged(\.lastError, "Hub authentication failed")
+            }
+
+        case "disconnected" where snapshot.isReachable:
+            assignIfChanged(\.state, .reconnecting)
+            if let error = snapshot.lastError?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !error.isEmpty {
+                assignIfChanged(\.lastError, error)
+            }
+
+        default:
+            // A reset/unreachable local API is not enough evidence to replace a
+            // richer log-derived state such as enrolling or auth failed.
+            break
+        }
+    }
+
+    /// Resets Hub-scoped identity before launching a new child process.
+    ///
+    /// A restart may target a different Hub or request a different asset
+    /// identity. Keep the configured endpoint visible immediately, but do not
+    /// expose the previous Hub's asset link until the new child reports a
+    /// connected, authoritative asset ID.
+    func prepareForLaunch(hubURL: String) {
+        assignIfChanged(\.hubURL, hubURL)
+        assignIfChanged(\.assetID, "")
+        markStarting()
     }
 
     func markStarting(pid: Int32? = nil) {

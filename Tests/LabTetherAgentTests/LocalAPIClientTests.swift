@@ -12,6 +12,7 @@ final class LocalAPIClientTests: XCTestCase {
         XCTAssertEqual(client.status, status)
         XCTAssertTrue(client.isReachable)
         XCTAssertEqual(client.hubConnectionState, "connected")
+        XCTAssertEqual(client.runtime.snapshot.assetID, "asset-1")
         XCTAssertEqual(client.runtime.snapshot.uptime, "5m")
         XCTAssertEqual(client.metrics.snapshot.current, status.metrics)
         XCTAssertTrue(client.metrics.snapshot.history.samples.isEmpty)

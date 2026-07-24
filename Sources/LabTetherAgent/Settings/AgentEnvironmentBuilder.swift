@@ -6,26 +6,17 @@ enum AgentEnvironmentBuilder {
         var env: [String: String] = [:]
 
         if let normalizedWS = settings.normalizedHubWebSocketURL() {
-            env["LABTETHER_WS_URL"] = normalizedWS
-            if allowsLoopbackOutbound(for: normalizedWS) {
-                env["LABTETHER_OUTBOUND_ALLOW_LOOPBACK"] = "true"
-            }
-            // Derive HTTP API base URL from WS URL for heartbeat fallback
-            // ws://host:8080/ws/agent -> http://host:8080
-            var apiBase = normalizedWS
-            apiBase = apiBase.replacingOccurrences(of: "wss://", with: "https://")
-            apiBase = apiBase.replacingOccurrences(of: "ws://", with: "http://")
-            if let url = URL(string: apiBase),
-               var components = URLComponents(url: url, resolvingAgainstBaseURL: false) {
-                components.path = ""
-                if let base = components.url?.absoluteString {
-                    env["LABTETHER_API_BASE_URL"] = base
-                }
+            for (key, value) in hubEnvironment(for: normalizedWS) {
+                env[key] = value
             }
         }
         let trimmedEnrollmentToken = settings.enrollmentToken.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedAPIToken = settings.apiToken.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmedEnrollmentToken.isEmpty {
+        switch AgentSettings.runtimeEnrollmentTokenFileAction(
+            enrollmentToken: trimmedEnrollmentToken,
+            hasPersistedEnrollmentToken: settings.hasPersistedEnrollmentToken
+        ) {
+        case .persist:
             try settings.persistRuntimeSecret(
                 trimmedEnrollmentToken,
                 to: settings.enrollmentTokenFilePath,
@@ -33,7 +24,9 @@ enum AgentEnvironmentBuilder {
                 label: "Enrollment token"
             )
             env["LABTETHER_ENROLLMENT_TOKEN_FILE"] = settings.enrollmentTokenFilePath
-        } else {
+        case .preserve:
+            env["LABTETHER_ENROLLMENT_TOKEN_FILE"] = settings.enrollmentTokenFilePath
+        case .remove:
             try settings.removeRuntimeSecretIfNeeded(
                 at: settings.enrollmentTokenFilePath,
                 issueKey: "runtime.enrollmentToken",
@@ -138,6 +131,33 @@ enum AgentEnvironmentBuilder {
         return env
     }
 
+    static func hubEnvironment(for normalizedWebSocketURL: String) -> [String: String] {
+        var env = ["LABTETHER_WS_URL": normalizedWebSocketURL]
+        if allowsLoopbackOutbound(for: normalizedWebSocketURL) {
+            env["LABTETHER_OUTBOUND_ALLOW_LOOPBACK"] = "true"
+        }
+        // The Go agent upgrades ws:// to wss:// unless insecure transport is
+        // explicitly enabled. Choosing http:// or ws:// in this UI is that
+        // opt-in, so preserve the scheme that Test Connection used.
+        if usesInsecureHubTransport(normalizedWebSocketURL) {
+            env["LABTETHER_ALLOW_INSECURE_TRANSPORT"] = "true"
+        }
+
+        // Derive HTTP API base URL from WS URL for heartbeat fallback.
+        // ws://host:8080/ws/agent -> http://host:8080
+        var apiBase = normalizedWebSocketURL
+        apiBase = apiBase.replacingOccurrences(of: "wss://", with: "https://")
+        apiBase = apiBase.replacingOccurrences(of: "ws://", with: "http://")
+        if let url = URL(string: apiBase),
+           var components = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+            components.path = ""
+            if let base = components.url?.absoluteString {
+                env["LABTETHER_API_BASE_URL"] = base
+            }
+        }
+        return env
+    }
+
     static func allowsLoopbackOutbound(for normalizedWebSocketURL: String) -> Bool {
         guard let components = URLComponents(string: normalizedWebSocketURL),
               var host = components.host?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -153,5 +173,9 @@ enum AgentEnvironmentBuilder {
             return true
         }
         return host == "127.0.0.1" || host == "::1"
+    }
+
+    static func usesInsecureHubTransport(_ normalizedWebSocketURL: String) -> Bool {
+        URLComponents(string: normalizedWebSocketURL)?.scheme?.lowercased() == "ws"
     }
 }
