@@ -85,7 +85,7 @@ enum DiagnosticsCollector {
         sections.append("""
 
             ### Connection
-            - Hub URL: \(hubURL)
+            - Hub URL: \(redactedHubURL(hubURL))
             - Connection State: \(connectionState)
             - API Token: \(apiTokenConfigured ? "configured" : "not configured")
             - Enrollment Token: \(enrollmentTokenConfigured ? "configured" : "not configured")
@@ -137,5 +137,23 @@ enum DiagnosticsCollector {
         }
 
         return sections.joined(separator: "\n")
+    }
+
+    /// Removes user info and request data before a report is copied or shared.
+    /// The settings validator rejects these URL parts, but diagnostics must
+    /// remain safe even when called with an older or malformed stored value.
+    private static func redactedHubURL(_ value: String) -> String {
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard var components = URLComponents(string: normalized),
+              components.scheme != nil,
+              components.host != nil
+        else {
+            return "<invalid>"
+        }
+        components.user = nil
+        components.password = nil
+        components.query = nil
+        components.fragment = nil
+        return components.string ?? "<invalid>"
     }
 }

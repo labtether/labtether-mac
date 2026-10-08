@@ -63,24 +63,8 @@ repo_tagged_head() {
   [[ "${head_commit}" == "${tag_commit}" ]]
 }
 
-repo_has_forbidden_release_input() {
-  local repo="$1"
-  local tracked_path
-  local lowercase_path
-  if git -C "${repo}" ls-files -s \
-    | awk '$1 == "120000" { found=1 } END { exit(found ? 0 : 1) }'; then
-    return 0
-  fi
-  while IFS= read -r -d '' tracked_path; do
-    lowercase_path="$(printf '%s' "${tracked_path}" | tr '[:upper:]' '[:lower:]')"
-    case "${lowercase_path}" in
-      *.p12|*.pfx|*.p8|*.pem|*.key|*.cer|*.crt|*.der|*.jks|*.keystore|*.keychain|*.keychain-db|*.mobileprovision|*.provisionprofile)
-        return 0
-        ;;
-    esac
-  done < <(git -C "${repo}" ls-files -z)
-  return 1
-}
+# shellcheck source=scripts/release-source-policy.sh
+source "${SCRIPT_DIR}/release-source-policy.sh"
 
 remote_tag_commit() {
   local repository="$1"

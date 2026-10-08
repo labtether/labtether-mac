@@ -131,4 +131,6 @@ if validate_github_release_asset_readback "$(jq '.assets += [{name: "extra", sta
   fail "GitHub readback fixture accepted an unexpected extra asset"
 fi
 
+bash "${SCRIPT_DIR}/test-release-source-policy.sh"
+
 printf 'Release isolation policy passed.\n'

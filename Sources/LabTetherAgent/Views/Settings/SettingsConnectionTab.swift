@@ -28,7 +28,8 @@ struct SettingsConnectionTab: View {
                             connectionTestResult = nil
                             connectionTestResult = await ConnectionTester.quickTest(
                                 hubURL: settings.hubURL,
-                                tlsSkipVerify: settings.tlsSkipVerify
+                                tlsSkipVerify: settings.tlsSkipVerify,
+                                tlsCAFile: settings.tlsCAFile
                             )
                             isTestingConnection = false
                         }
@@ -216,7 +217,8 @@ struct SettingsConnectionTab: View {
         .sheet(isPresented: $showDiagnosticsSheet) {
             ConnectionDiagnosticsSheet(
                 hubURL: settings.hubURL,
-                tlsSkipVerify: settings.tlsSkipVerify
+                tlsSkipVerify: settings.tlsSkipVerify,
+                tlsCAFile: settings.tlsCAFile
             )
         }
     }

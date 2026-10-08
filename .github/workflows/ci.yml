@@ -10,6 +10,19 @@ permissions:
   contents: read
 
 jobs:
+  line-limit:
+    name: Handwritten code / 500-line limit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check line-limit gate behavior
+        run: python3 -m unittest scripts/ci/test_line_limit.py
+      - name: Enforce full-repository line limit
+        run: python3 scripts/ci/check-line-limit.py
+
   qa-select:
     name: Select risk-based QA contracts
     runs-on: macos-15
@@ -41,9 +54,17 @@ jobs:
           "${selector[@]}"
 
   build-and-test:
+    needs: [line-limit]
+    if: always()
     name: Fast Swift build and tests
     runs-on: macos-15
     steps:
+      - name: Require source-size gate
+        shell: bash
+        env:
+          LINE_LIMIT_RESULT: ${{ needs.line-limit.result }}
+        run: |
+          test "${LINE_LIMIT_RESULT}" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -81,7 +102,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: labtether/labtether-agent
-          ref: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'main' }}
+          # Coordinated release contract: this exact SHA must match the Go
+          # agent source accepted by the root-cause release gate.
+          ref: cc64499481c415dbccfa5909e635d57bcfe3e579
           path: agent-core
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0

@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import os
+import Security
 
 // MARK: - Result types
 
@@ -101,15 +102,24 @@ enum ConnectionTester {
     /// - Parameters:
     ///   - hubURL: The WebSocket hub URL (e.g. `wss://host:port/ws/agent`).
     ///   - tlsSkipVerify: When `true`, server certificate errors are ignored.
+    ///   - tlsCAFile: Optional PEM CA certificate file used for private Hub TLS.
     /// - Returns: `.success(responseTimeMs:)` or `.failure(error:)`.
-    static func quickTest(hubURL: String, tlsSkipVerify: Bool = false) async -> ConnectionTestResult {
+    static func quickTest(
+        hubURL: String,
+        tlsSkipVerify: Bool = false,
+        tlsCAFile: String = ""
+    ) async -> ConnectionTestResult {
         guard let identityURL = hubIdentityURL(from: hubURL) else {
             return .failure(error: "Invalid hub URL.")
         }
 
         let start = Date()
         do {
-            let response = try await probeHub(url: identityURL, tlsSkipVerify: tlsSkipVerify)
+            let response = try await probeHub(
+                url: identityURL,
+                tlsSkipVerify: tlsSkipVerify,
+                tlsCAFile: tlsCAFile
+            )
             let elapsed = Int(Date().timeIntervalSince(start) * 1_000)
             if let validationError = hubIdentityValidationError(
                 statusCode: response.statusCode,
@@ -137,10 +147,12 @@ enum ConnectionTester {
     /// - Parameters:
     ///   - hubURL: The WebSocket hub URL.
     ///   - tlsSkipVerify: When `true`, TLS certificate verification is skipped.
+    ///   - tlsCAFile: Optional PEM CA certificate file used for private Hub TLS.
     ///   - onUpdate: Called on an unspecified thread after each step changes state.
     static func fullDiagnostics(
         hubURL: String,
         tlsSkipVerify: Bool,
+        tlsCAFile: String = "",
         onUpdate: @escaping ([DiagnosticStep]) -> Void
     ) async {
         var steps = [
@@ -200,7 +212,12 @@ enum ConnectionTester {
         onUpdate(steps)
         let tlsResult: StepStatus
         if isTLS {
-            tlsResult = await checkTLS(host: host, port: port, skipVerify: tlsSkipVerify)
+            tlsResult = await checkTLS(
+                host: host,
+                port: port,
+                skipVerify: tlsSkipVerify,
+                caFile: tlsCAFile
+            )
         } else {
             tlsResult = .success("Skipped (plain HTTP)")
         }
@@ -216,7 +233,11 @@ enum ConnectionTester {
         // Step 3 — HTTP
         steps[3].status = .running
         onUpdate(steps)
-        let httpResult = await checkHTTP(url: identityURL, tlsSkipVerify: tlsSkipVerify)
+        let httpResult = await checkHTTP(
+            url: identityURL,
+            tlsSkipVerify: tlsSkipVerify,
+            caFile: tlsCAFile
+        )
         steps[3].status = httpResult
         onUpdate(steps)
     }
@@ -266,6 +287,7 @@ enum ConnectionTester {
     private enum HubProbeError: Error {
         case invalidHTTPResponse
         case responseTooLarge
+        case invalidCustomCA
     }
 
     /// Validates the bounded response returned by the public discovery
@@ -314,14 +336,23 @@ enum ConnectionTester {
         return nil
     }
 
-    private static func probeHub(url: URL, tlsSkipVerify: Bool) async throws -> HubProbeResponse {
+    private static func probeHub(
+        url: URL,
+        tlsSkipVerify: Bool,
+        tlsCAFile: String
+    ) async throws -> HubProbeResponse {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 10
         config.timeoutIntervalForResource = 10
 
+        let trustedCertificates = try Self.trustedCertificates(for: tlsCAFile)
+
         // The delegate is always installed so redirect refusal cannot be bypassed
         // when certificate verification remains enabled.
-        let delegate = HubProbeSessionDelegate(tlsSkipVerify: tlsSkipVerify)
+        let delegate = HubProbeSessionDelegate(
+            tlsSkipVerify: tlsSkipVerify,
+            trustedCertificates: trustedCertificates
+        )
         let session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
         defer { session.invalidateAndCancel() }
 
@@ -360,6 +391,8 @@ enum ConnectionTester {
                 return "The endpoint returned an invalid HTTP response."
             case .responseTooLarge:
                 return "Hub verification response is too large."
+            case .invalidCustomCA:
+                return "The configured CA certificate could not be loaded."
             }
         }
 
@@ -383,7 +416,7 @@ enum ConnectionTester {
         return "Unexpected connection error."
     }
 
-    private static func redactedHubURL(_ value: String) -> String {
+    static func redactedHubURL(_ value: String) -> String {
         let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard var components = URLComponents(string: normalized),
               components.scheme != nil,
@@ -398,6 +431,54 @@ enum ConnectionTester {
         return components.string ?? "<invalid>"
     }
 
+    /// Loads the PEM CA format supported by the bundled Go agent.
+    /// Returning an error for a configured-but-invalid file keeps diagnostics
+    /// honest instead of silently falling back to a different trust policy.
+    static func trustedCertificates(for path: String) throws -> [SecCertificate] {
+        let normalized = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return [] }
+        guard let data = try? Data(
+            contentsOf: URL(fileURLWithPath: normalized),
+            options: [.mappedIfSafe]
+        ), data.count <= 1_048_576 else {
+            throw HubProbeError.invalidCustomCA
+        }
+
+        guard let pem = String(data: data, encoding: .utf8) else {
+            throw HubProbeError.invalidCustomCA
+        }
+
+        let beginMarker = "-----BEGIN CERTIFICATE-----"
+        let endMarker = "-----END CERTIFICATE-----"
+        let padding = CharacterSet(charactersIn: " \t\r")
+        var certificates: [SecCertificate] = []
+        var encoded: String?
+        for rawLine in pem.components(separatedBy: "\n") {
+            let line = rawLine.trimmingCharacters(in: padding)
+            if line == beginMarker {
+                guard encoded == nil, rawLine.hasPrefix(beginMarker) else {
+                    throw HubProbeError.invalidCustomCA
+                }
+                encoded = ""
+            } else if line == endMarker {
+                guard rawLine.hasPrefix(endMarker), let body = encoded,
+                      let decoded = Data(base64Encoded: body),
+                      let certificate = SecCertificateCreateWithData(nil, decoded as CFData) else {
+                    throw HubProbeError.invalidCustomCA
+                }
+                certificates.append(certificate)
+                encoded = nil
+            } else if encoded != nil {
+                encoded?.append(contentsOf: rawLine.filter { !" \t\r".contains($0) })
+            }
+        }
+
+        guard encoded == nil, !certificates.isEmpty else {
+            throw HubProbeError.invalidCustomCA
+        }
+        return certificates
+    }
+
     private static func defaultPort(for url: URL) -> Int {
         switch url.scheme?.lowercased() {
         case "https": return 443
@@ -405,162 +486,15 @@ enum ConnectionTester {
         }
     }
 
-    /// Resolves `host` to at least one address using `getaddrinfo`.
-    private static func resolveDNS(host: String) async -> StepStatus {
-        await Task.detached(priority: .userInitiated) {
-            var hints = addrinfo()
-            hints.ai_family = AF_UNSPEC
-            hints.ai_socktype = SOCK_STREAM
-
-            var result: UnsafeMutablePointer<addrinfo>?
-            let status = getaddrinfo(host, nil, &hints, &result)
-            defer { if result != nil { freeaddrinfo(result) } }
-
-            if status != 0 {
-                let message = String(cString: gai_strerror(status))
-                return StepStatus.failure("DNS lookup failed: \(message)")
-            }
-
-            // Collect resolved addresses for the detail string.
-            var addresses: [String] = []
-            var cursor = result
-            while let node = cursor {
-                let addr = node.pointee.ai_addr
-                let family = Int32(node.pointee.ai_family)
-                if family == AF_INET {
-                    var buf = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
-                    var sin = sockaddr_in()
-                    withUnsafeBytes(of: addr!.pointee) { raw in
-                        _ = raw.load(as: sockaddr_in.self)
-                        memcpy(&sin, raw.baseAddress!, MemoryLayout<sockaddr_in>.size)
-                    }
-                    if inet_ntop(AF_INET, &sin.sin_addr, &buf, socklen_t(INET_ADDRSTRLEN)) != nil {
-                        addresses.append(String(cString: buf))
-                    }
-                } else if family == AF_INET6 {
-                    var buf = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
-                    var sin6 = sockaddr_in6()
-                    _ = withUnsafeBytes(of: addr!.pointee) { raw in
-                        memcpy(&sin6, raw.baseAddress!, MemoryLayout<sockaddr_in6>.size)
-                    }
-                    if inet_ntop(AF_INET6, &sin6.sin6_addr, &buf, socklen_t(INET6_ADDRSTRLEN)) != nil {
-                        addresses.append(String(cString: buf))
-                    }
-                }
-                cursor = node.pointee.ai_next
-            }
-
-            let detail = addresses.isEmpty ? host : addresses.prefix(3).joined(separator: ", ")
-            return StepStatus.success("Resolved: \(detail)")
-        }.value
-    }
-
-    /// Attempts a raw TCP connection to `host:port` with a 5-second timeout.
-    private static func checkTCP(host: String, port: Int) async -> StepStatus {
-        await withCheckedContinuation { continuation in
-            let resumed = OSAllocatedUnfairLock(initialState: false)
-            let endpoint = NWEndpoint.hostPort(
-                host: NWEndpoint.Host(host),
-                port: NWEndpoint.Port(integerLiteral: UInt16(clamping: port))
-            )
-            let connection = NWConnection(to: endpoint, using: .tcp)
-
-            @Sendable func resumeOnce(_ result: StepStatus) {
-                let alreadyResumed = resumed.withLock { val -> Bool in
-                    let was = val
-                    val = true
-                    return was
-                }
-                guard !alreadyResumed else { return }
-                connection.cancel()
-                continuation.resume(returning: result)
-            }
-
-            let timeout = DispatchWorkItem {
-                resumeOnce(.failure("TCP connect timed out"))
-            }
-            DispatchQueue.global().asyncAfter(deadline: .now() + 5, execute: timeout)
-
-            connection.stateUpdateHandler = { state in
-                switch state {
-                case .ready:
-                    timeout.cancel()
-                    resumeOnce(.success("Connected to \(host):\(port)"))
-                case .failed(let error):
-                    timeout.cancel()
-                    resumeOnce(.failure(error.localizedDescription))
-                case .cancelled:
-                    timeout.cancel()
-                    resumeOnce(.failure("Connection cancelled"))
-                default:
-                    break
-                }
-            }
-            connection.start(queue: .global())
-        }
-    }
-
-    /// Attempts a TLS handshake with `host:port` with a 5-second timeout.
-    private static func checkTLS(host: String, port: Int, skipVerify: Bool) async -> StepStatus {
-        await withCheckedContinuation { continuation in
-            let resumed = OSAllocatedUnfairLock(initialState: false)
-
-            let tlsOptions = NWProtocolTLS.Options()
-            if skipVerify {
-                sec_protocol_options_set_verify_block(
-                    tlsOptions.securityProtocolOptions,
-                    { _, _, completionHandler in completionHandler(true) },
-                    .global()
-                )
-            }
-            let params = NWParameters(tls: tlsOptions)
-
-            let endpoint = NWEndpoint.hostPort(
-                host: NWEndpoint.Host(host),
-                port: NWEndpoint.Port(integerLiteral: UInt16(clamping: port))
-            )
-            let connection = NWConnection(to: endpoint, using: params)
-
-            @Sendable func resumeOnce(_ result: StepStatus) {
-                let alreadyResumed = resumed.withLock { val -> Bool in
-                    let was = val
-                    val = true
-                    return was
-                }
-                guard !alreadyResumed else { return }
-                connection.cancel()
-                continuation.resume(returning: result)
-            }
-
-            let timeout = DispatchWorkItem {
-                resumeOnce(.failure("TLS handshake timed out"))
-            }
-            DispatchQueue.global().asyncAfter(deadline: .now() + 5, execute: timeout)
-
-            connection.stateUpdateHandler = { state in
-                switch state {
-                case .ready:
-                    timeout.cancel()
-                    resumeOnce(.success("TLS handshake succeeded"))
-                case .failed(let error):
-                    timeout.cancel()
-                    resumeOnce(.failure(error.localizedDescription))
-                case .cancelled:
-                    timeout.cancel()
-                    resumeOnce(.failure("Connection cancelled"))
-                default:
-                    break
-                }
-            }
-            connection.start(queue: .global())
-        }
-    }
-
     /// Performs a bounded, non-redirecting HTTP GET to `url` and verifies the
     /// canonical LabTether hub identity response.
-    private static func checkHTTP(url: URL, tlsSkipVerify: Bool) async -> StepStatus {
+    private static func checkHTTP(url: URL, tlsSkipVerify: Bool, caFile: String) async -> StepStatus {
         do {
-            let response = try await probeHub(url: url, tlsSkipVerify: tlsSkipVerify)
+            let response = try await probeHub(
+                url: url,
+                tlsSkipVerify: tlsSkipVerify,
+                tlsCAFile: caFile
+            )
             if let validationError = hubIdentityValidationError(
                 statusCode: response.statusCode,
                 expectedContentLength: response.expectedContentLength,
@@ -577,13 +511,15 @@ enum ConnectionTester {
 
 // MARK: - HubProbeSessionDelegate
 
-/// A probe delegate that refuses redirects and only accepts an untrusted server
-/// certificate when the user explicitly enabled `tlsSkipVerify`.
+/// A probe delegate that refuses redirects and only accepts a server certificate
+/// when normal system trust, an explicit CA file, or `tlsSkipVerify` allows it.
 private final class HubProbeSessionDelegate: NSObject, URLSessionDelegate, URLSessionTaskDelegate {
     private let tlsSkipVerify: Bool
+    private let trustedCertificates: [SecCertificate]
 
-    init(tlsSkipVerify: Bool) {
+    init(tlsSkipVerify: Bool, trustedCertificates: [SecCertificate]) {
         self.tlsSkipVerify = tlsSkipVerify
+        self.trustedCertificates = trustedCertificates
     }
 
     func urlSession(
@@ -610,14 +546,30 @@ private final class HubProbeSessionDelegate: NSObject, URLSessionDelegate, URLSe
         _ challenge: URLAuthenticationChallenge,
         completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
-        guard tlsSkipVerify,
-              challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+        guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
               let serverTrust = challenge.protectionSpace.serverTrust
         else {
             completionHandler(.performDefaultHandling, nil)
             return
         }
-        completionHandler(.useCredential, URLCredential(trust: serverTrust))
+
+        if tlsSkipVerify {
+            completionHandler(.useCredential, URLCredential(trust: serverTrust))
+            return
+        }
+
+        if !trustedCertificates.isEmpty {
+            SecTrustSetAnchorCertificates(serverTrust, trustedCertificates as CFArray)
+            SecTrustSetAnchorCertificatesOnly(serverTrust, false)
+            guard SecTrustEvaluateWithError(serverTrust, nil) else {
+                completionHandler(.cancelAuthenticationChallenge, nil)
+                return
+            }
+            completionHandler(.useCredential, URLCredential(trust: serverTrust))
+            return
+        }
+
+        completionHandler(.performDefaultHandling, nil)
     }
 
     func urlSession(

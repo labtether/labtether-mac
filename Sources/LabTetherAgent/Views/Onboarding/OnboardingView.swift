@@ -63,7 +63,7 @@ final class OnboardingState: ObservableObject {
 
     /// Whether the user has filled in enough data to leave step 0.
     var canAdvanceFromStep0: Bool {
-        !hubURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        AgentSettingsNormalization.canonicalHubWebSocketURL(from: hubURL) != nil
     }
 
     /// Whether the user has filled in enough data to leave step 1.
@@ -76,13 +76,17 @@ final class OnboardingState: ObservableObject {
     /// Fires a quick HTTP probe against `hubURL` and stores the result.
     ///
     /// - Parameter tlsSkipVerify: When `true`, server certificate errors are ignored.
-    func testConnection(tlsSkipVerify: Bool) async {
+    func testConnection(tlsSkipVerify: Bool, tlsCAFile: String = "") async {
         guard !isTesting else { return }
         isTesting = true
         connectionTestResult = nil
 
         let url = hubURL
-        let result = await ConnectionTester.quickTest(hubURL: url, tlsSkipVerify: tlsSkipVerify)
+        let result = await ConnectionTester.quickTest(
+            hubURL: url,
+            tlsSkipVerify: tlsSkipVerify,
+            tlsCAFile: tlsCAFile
+        )
 
         isTesting = false
         connectionTestResult = result
@@ -189,6 +193,7 @@ struct OnboardingView: View {
                 state: state,
                 settings: settings,
                 tlsSkipVerify: settings.tlsSkipVerify,
+                tlsCAFile: settings.tlsCAFile,
                 assetID: $state.assetID,
                 groupID: $state.groupID,
                 onFinish: finish
