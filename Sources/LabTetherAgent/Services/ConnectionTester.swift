@@ -102,7 +102,7 @@ enum ConnectionTester {
     /// - Parameters:
     ///   - hubURL: The WebSocket hub URL (e.g. `wss://host:port/ws/agent`).
     ///   - tlsSkipVerify: When `true`, server certificate errors are ignored.
-    ///   - tlsCAFile: Optional PEM or DER CA certificate file used for private Hub TLS.
+    ///   - tlsCAFile: Optional PEM CA certificate file used for private Hub TLS.
     /// - Returns: `.success(responseTimeMs:)` or `.failure(error:)`.
     static func quickTest(
         hubURL: String,
@@ -147,7 +147,7 @@ enum ConnectionTester {
     /// - Parameters:
     ///   - hubURL: The WebSocket hub URL.
     ///   - tlsSkipVerify: When `true`, TLS certificate verification is skipped.
-    ///   - tlsCAFile: Optional PEM or DER CA certificate file used for private Hub TLS.
+    ///   - tlsCAFile: Optional PEM CA certificate file used for private Hub TLS.
     ///   - onUpdate: Called on an unspecified thread after each step changes state.
     static func fullDiagnostics(
         hubURL: String,
@@ -431,7 +431,7 @@ enum ConnectionTester {
         return components.string ?? "<invalid>"
     }
 
-    /// Loads a bounded PEM or DER CA bundle for private Hub certificates.
+    /// Loads the PEM CA format supported by the bundled Go agent.
     /// Returning an error for a configured-but-invalid file keeps diagnostics
     /// honest instead of silently falling back to a different trust policy.
     static func trustedCertificates(for path: String) throws -> [SecCertificate] {
@@ -444,29 +444,36 @@ enum ConnectionTester {
             throw HubProbeError.invalidCustomCA
         }
 
-        if let certificate = SecCertificateCreateWithData(nil, data as CFData) {
-            return [certificate]
-        }
-
         guard let pem = String(data: data, encoding: .utf8) else {
             throw HubProbeError.invalidCustomCA
         }
 
         let beginMarker = "-----BEGIN CERTIFICATE-----"
         let endMarker = "-----END CERTIFICATE-----"
-        let certificates = pem
-            .components(separatedBy: beginMarker)
-            .dropFirst()
-            .compactMap { block -> SecCertificate? in
-                guard let encoded = block.components(separatedBy: endMarker).first else {
-                    return nil
+        let padding = CharacterSet(charactersIn: " \t\r")
+        var certificates: [SecCertificate] = []
+        var encoded: String?
+        for rawLine in pem.components(separatedBy: "\n") {
+            let line = rawLine.trimmingCharacters(in: padding)
+            if line == beginMarker {
+                guard encoded == nil, rawLine.hasPrefix(beginMarker) else {
+                    throw HubProbeError.invalidCustomCA
                 }
-                let base64 = encoded.filter { !$0.isWhitespace }
-                guard let decoded = Data(base64Encoded: base64) else { return nil }
-                return SecCertificateCreateWithData(nil, decoded as CFData)
+                encoded = ""
+            } else if line == endMarker {
+                guard rawLine.hasPrefix(endMarker), let body = encoded,
+                      let decoded = Data(base64Encoded: body),
+                      let certificate = SecCertificateCreateWithData(nil, decoded as CFData) else {
+                    throw HubProbeError.invalidCustomCA
+                }
+                certificates.append(certificate)
+                encoded = nil
+            } else if encoded != nil {
+                encoded?.append(contentsOf: rawLine.filter { !" \t\r".contains($0) })
             }
+        }
 
-        guard !certificates.isEmpty else {
+        guard encoded == nil, !certificates.isEmpty else {
             throw HubProbeError.invalidCustomCA
         }
         return certificates
