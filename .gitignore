@@ -51,9 +51,7 @@ fastlane/test_output
 *.swo
 *~
 
-# Claude / AI tooling
-CLAUDE.md
-AGENTS.md
+# Local AI tool state (shared AGENTS.md and CLAUDE.md are versioned)
 .claude/
 .mcp.json
 .context/
@@ -67,3 +65,7 @@ AGENTS.md
 # Signed release outputs must be prepared outside the repository.
 labtether-agent-macos-universal.tar.gz
 labtether-agent-macos-universal.tar.gz.sha256
+
+# Python helper cache
+__pycache__/
+*.py[cod]

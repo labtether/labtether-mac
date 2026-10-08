@@ -320,4 +320,19 @@ final class ConnectionTesterTests: XCTestCase {
             XCTFail("Expected .failure for unroutable IP, got \(result)")
         }
     }
+
+    func testQuickTestReportsInvalidCustomCAFile() async {
+        let missingCAFile = FileManager.default.temporaryDirectory
+            .appendingPathComponent("labtether-missing-ca-\(UUID().uuidString).pem")
+        let result = await ConnectionTester.quickTest(
+            hubURL: "wss://192.0.2.1:9999/ws/agent",
+            tlsCAFile: missingCAFile.path
+        )
+
+        guard case .failure(let error) = result else {
+            XCTFail("Expected invalid custom CA file to fail")
+            return
+        }
+        XCTAssertEqual(error, "The configured CA certificate could not be loaded.")
+    }
 }

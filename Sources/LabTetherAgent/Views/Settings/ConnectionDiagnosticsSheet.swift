@@ -13,6 +13,7 @@ struct ConnectionDiagnosticsSheet: View {
 
     let hubURL: String
     let tlsSkipVerify: Bool
+    let tlsCAFile: String
 
     // MARK: State
 
@@ -53,7 +54,7 @@ struct ConnectionDiagnosticsSheet: View {
                 .font(LT.sora(16, weight: .semibold))
                 .foregroundStyle(LT.textPrimary)
 
-            Text(hubURL)
+            Text(ConnectionTester.redactedHubURL(hubURL))
                 .font(LT.mono(12))
                 .foregroundStyle(LT.textSecondary)
                 .lineLimit(1)
@@ -132,7 +133,8 @@ struct ConnectionDiagnosticsSheet: View {
         Task {
             await ConnectionTester.fullDiagnostics(
                 hubURL: hubURL,
-                tlsSkipVerify: tlsSkipVerify
+                tlsSkipVerify: tlsSkipVerify,
+                tlsCAFile: tlsCAFile
             ) { updatedSteps in
                 Task { @MainActor in
                     steps = updatedSteps

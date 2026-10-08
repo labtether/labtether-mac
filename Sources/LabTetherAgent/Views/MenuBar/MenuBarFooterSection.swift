@@ -41,10 +41,9 @@ struct MenuBarFooterSection: View {
         .padding(.bottom, LT.space4)
 
         HStack(spacing: LT.space4) {
-            Image(systemName: "cube.fill")
-                .font(.system(size: 8, weight: .semibold))
-                .foregroundStyle(LT.accent.opacity(0.5))
-                .shadow(color: LT.accent.opacity(0.3), radius: 3)
+            LTBrandMark(size: 16)
+                .shadow(color: LT.accent.opacity(0.25), radius: 4)
+                .accessibilityLabel("LabTether")
             Text("LabTether")
                 .font(LT.sora(9, weight: .semibold))
                 .foregroundStyle(

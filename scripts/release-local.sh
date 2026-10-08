@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+
+# Temporary owner-requested code-signing pause; remove only after explicit approval.
+echo "Code signing is paused by owner request (2026-09-05)." >&2
+exit 1
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"

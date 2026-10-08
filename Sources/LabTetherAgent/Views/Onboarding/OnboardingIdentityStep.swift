@@ -14,6 +14,7 @@ struct OnboardingIdentityStep: View {
     @ObservedObject var state: OnboardingState
     let settings: AgentSettings
     let tlsSkipVerify: Bool
+    let tlsCAFile: String
 
     // MARK: Inputs
 
@@ -155,7 +156,7 @@ struct OnboardingIdentityStep: View {
     private var testConnectionButton: some View {
         Button {
             Task {
-                await state.testConnection(tlsSkipVerify: tlsSkipVerify)
+                await state.testConnection(tlsSkipVerify: tlsSkipVerify, tlsCAFile: tlsCAFile)
             }
         } label: {
             HStack(spacing: LT.space6) {

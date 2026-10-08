@@ -112,6 +112,17 @@ final class DiagnosticsCollectorTests: XCTestCase {
         XCTAssertTrue(report.contains("wss://mylab.local/ws/agent"), "Expected hub URL in report")
     }
 
+    func testCollectRedactsHubURLCredentialsAndQuery() {
+        let report = makeReport(
+            hubURL: "wss://report-user:report-secret@hub.example.com/ws/agent?token=also-secret#fragment"
+        )
+
+        XCTAssertTrue(report.contains("Hub URL: wss://hub.example.com/ws/agent"))
+        XCTAssertFalse(report.contains("report-secret"))
+        XCTAssertFalse(report.contains("also-secret"))
+        XCTAssertFalse(report.contains("fragment"))
+    }
+
     func testCollectIncludesAssetAndGroupIDs() {
         let report = makeReport(assetID: "my-asset-42", groupID: "prod-group")
 

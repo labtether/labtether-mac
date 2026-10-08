@@ -73,7 +73,8 @@ struct MenuBarView: View {
                             Task {
                                 let result = await ConnectionTester.quickTest(
                                     hubURL: settings.hubURL,
-                                    tlsSkipVerify: settings.tlsSkipVerify
+                                    tlsSkipVerify: settings.tlsSkipVerify,
+                                    tlsCAFile: settings.tlsCAFile
                                 )
                                 let message: String
                                 switch result {
