@@ -3,7 +3,6 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    tags: ["v*"]
   pull_request:
 
 permissions:
@@ -25,7 +24,7 @@ jobs:
 
   qa-select:
     name: Select risk-based QA contracts
-    runs-on: macos-15
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       mac_hub_transport: ${{ steps.select.outputs.mac_hub_transport }}
@@ -70,8 +69,6 @@ jobs:
           persist-credentials: false
       - name: Enforce release isolation policy
         run: ./scripts/test-release-policy.sh
-      - name: Build Swift host
-        run: swift build
       - name: Run Swift tests
         run: swift test
 
