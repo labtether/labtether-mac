@@ -82,31 +82,21 @@ final class AgentSettingsNormalizationTests: XCTestCase {
         XCTAssertFalse(AgentEnvironmentBuilder.allowsLoopbackOutbound(for: "wss://hub.example.com/ws/agent"))
     }
 
-    func testGroupSelectionOnlyLeavesWrapperDuringEnrollment() {
-        XCTAssertEqual(
-            AgentEnvironmentBuilder.enrollmentGroupID(
-                groupID: " qa ", enrollmentToken: "one-use-token", hasPersistedEnrollmentToken: false
-            ),
-            "qa"
+    func testChildEnvironmentKeepsCustomCAAndOneUseGroup() {
+        let pending = AgentEnvironmentBuilder.connectionIntentEnvironment(
+            groupID: " qa ", enrollmentToken: "", hasPersistedEnrollmentToken: true,
+            tlsSkipVerify: true, tlsCAFile: " /qa/hub-ca.pem "
         )
-        XCTAssertEqual(
-            AgentEnvironmentBuilder.enrollmentGroupID(
-                groupID: "qa", enrollmentToken: "", hasPersistedEnrollmentToken: true
-            ),
-            "qa"
-        )
-        XCTAssertNil(
-            AgentEnvironmentBuilder.enrollmentGroupID(
-                groupID: "qa", enrollmentToken: "", hasPersistedEnrollmentToken: false
-            )
-        )
-    }
+        XCTAssertEqual(pending["AGENT_GROUP_ID"], "qa")
+        XCTAssertEqual(pending["LABTETHER_TLS_CA_FILE"], "/qa/hub-ca.pem")
+        XCTAssertNil(pending["LABTETHER_TLS_SKIP_VERIFY"])
 
-    func testCustomCAKeepsCertificateChecksOnWithOldSkipSetting() {
-        XCTAssertFalse(AgentEnvironmentBuilder.effectiveTLSSkipVerify(true, caFile: "/qa/hub-ca.pem"))
-        XCTAssertFalse(AgentEnvironmentBuilder.effectiveTLSSkipVerify(true, caFile: "  /qa/hub-ca.pem  "))
-        XCTAssertTrue(AgentEnvironmentBuilder.effectiveTLSSkipVerify(true, caFile: ""))
-        XCTAssertFalse(AgentEnvironmentBuilder.effectiveTLSSkipVerify(false, caFile: ""))
+        let durable = AgentEnvironmentBuilder.connectionIntentEnvironment(
+            groupID: "qa", enrollmentToken: "", hasPersistedEnrollmentToken: false,
+            tlsSkipVerify: true, tlsCAFile: ""
+        )
+        XCTAssertNil(durable["AGENT_GROUP_ID"])
+        XCTAssertEqual(durable["LABTETHER_TLS_SKIP_VERIFY"], "true")
     }
 
     func testDockerEndpointValidationAllowsAbsolutePathAndHTTPSURL() {

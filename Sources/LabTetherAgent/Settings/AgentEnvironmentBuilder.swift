@@ -55,19 +55,14 @@ enum AgentEnvironmentBuilder {
             )
         }
         if !settings.assetID.isEmpty { env["AGENT_ASSET_ID"] = settings.assetID }
-        if let groupID = enrollmentGroupID(
+        env.merge(connectionIntentEnvironment(
             groupID: settings.groupID,
             enrollmentToken: trimmedEnrollmentToken,
-            hasPersistedEnrollmentToken: settings.hasPersistedEnrollmentToken
-        ) {
-            env["AGENT_GROUP_ID"] = groupID
-        }
+            hasPersistedEnrollmentToken: settings.hasPersistedEnrollmentToken,
+            tlsSkipVerify: settings.tlsSkipVerify,
+            tlsCAFile: settings.tlsCAFile
+        )) { _, new in new }
         env["AGENT_PORT"] = settings.normalizedAgentPort()
-        let caFile = settings.tlsCAFile.trimmingCharacters(in: .whitespacesAndNewlines)
-        if effectiveTLSSkipVerify(settings.tlsSkipVerify, caFile: caFile) {
-            env["LABTETHER_TLS_SKIP_VERIFY"] = "true"
-        }
-        if !caFile.isEmpty { env["LABTETHER_TLS_CA_FILE"] = caFile }
         env["LABTETHER_DOCKER_ENABLED"] = settings.normalizedDockerMode()
         env["LABTETHER_DOCKER_SOCKET"] = settings.normalizedDockerEndpoint()
         env["LABTETHER_DOCKER_DISCOVERY_INTERVAL"] = settings.normalizedDockerDiscoveryInterval()
@@ -167,18 +162,28 @@ enum AgentEnvironmentBuilder {
         return env
     }
 
-    /// Group selection is one-use enrollment intent. Once the Go child has a
-    /// durable credential, Hub placement is authoritative on later heartbeats.
-    static func enrollmentGroupID(
+    /// These entries are merged into the Go child's launch environment.
+    /// Group selection is one-use; a custom CA always keeps verification on.
+    static func connectionIntentEnvironment(
         groupID: String,
         enrollmentToken: String,
-        hasPersistedEnrollmentToken: Bool
-    ) -> String? {
+        hasPersistedEnrollmentToken: Bool,
+        tlsSkipVerify: Bool,
+        tlsCAFile: String
+    ) -> [String: String] {
+        var env: [String: String] = [:]
         let trimmedGroupID = groupID.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedGroupID.isEmpty else { return nil }
         let hasEnrollmentIntent = !enrollmentToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
             hasPersistedEnrollmentToken
-        return hasEnrollmentIntent ? trimmedGroupID : nil
+        if hasEnrollmentIntent && !trimmedGroupID.isEmpty {
+            env["AGENT_GROUP_ID"] = trimmedGroupID
+        }
+        let caFile = tlsCAFile.trimmingCharacters(in: .whitespacesAndNewlines)
+        if effectiveTLSSkipVerify(tlsSkipVerify, caFile: caFile) {
+            env["LABTETHER_TLS_SKIP_VERIFY"] = "true"
+        }
+        if !caFile.isEmpty { env["LABTETHER_TLS_CA_FILE"] = caFile }
+        return env
     }
 
     static func effectiveTLSSkipVerify(_ skipVerify: Bool, caFile: String) -> Bool {
