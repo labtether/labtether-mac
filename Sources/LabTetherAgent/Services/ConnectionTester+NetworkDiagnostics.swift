@@ -117,7 +117,7 @@ extension ConnectionTester {
             let resumed = OSAllocatedUnfairLock(initialState: false)
 
             let tlsOptions = NWProtocolTLS.Options()
-            if skipVerify {
+            if AgentEnvironmentBuilder.effectiveTLSSkipVerify(skipVerify, caFile: caFile) {
                 sec_protocol_options_set_verify_block(
                     tlsOptions.securityProtocolOptions,
                     { _, _, completionHandler in completionHandler(true) },

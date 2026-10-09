@@ -55,10 +55,14 @@ enum AgentEnvironmentBuilder {
             )
         }
         if !settings.assetID.isEmpty { env["AGENT_ASSET_ID"] = settings.assetID }
-        if !settings.groupID.isEmpty { env["AGENT_GROUP_ID"] = settings.groupID }
+        env.merge(connectionIntentEnvironment(
+            groupID: settings.groupID,
+            enrollmentToken: trimmedEnrollmentToken,
+            hasPersistedEnrollmentToken: settings.hasPersistedEnrollmentToken,
+            tlsSkipVerify: settings.tlsSkipVerify,
+            tlsCAFile: settings.tlsCAFile
+        )) { _, new in new }
         env["AGENT_PORT"] = settings.normalizedAgentPort()
-        if settings.tlsSkipVerify { env["LABTETHER_TLS_SKIP_VERIFY"] = "true" }
-        if !settings.tlsCAFile.isEmpty { env["LABTETHER_TLS_CA_FILE"] = settings.tlsCAFile }
         env["LABTETHER_DOCKER_ENABLED"] = settings.normalizedDockerMode()
         env["LABTETHER_DOCKER_SOCKET"] = settings.normalizedDockerEndpoint()
         env["LABTETHER_DOCKER_DISCOVERY_INTERVAL"] = settings.normalizedDockerDiscoveryInterval()
@@ -156,6 +160,34 @@ enum AgentEnvironmentBuilder {
             }
         }
         return env
+    }
+
+    /// These entries are merged into the Go child's launch environment.
+    /// Group selection is one-use; a custom CA always keeps verification on.
+    static func connectionIntentEnvironment(
+        groupID: String,
+        enrollmentToken: String,
+        hasPersistedEnrollmentToken: Bool,
+        tlsSkipVerify: Bool,
+        tlsCAFile: String
+    ) -> [String: String] {
+        var env: [String: String] = [:]
+        let trimmedGroupID = groupID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasEnrollmentIntent = !enrollmentToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            hasPersistedEnrollmentToken
+        if hasEnrollmentIntent && !trimmedGroupID.isEmpty {
+            env["AGENT_GROUP_ID"] = trimmedGroupID
+        }
+        let caFile = tlsCAFile.trimmingCharacters(in: .whitespacesAndNewlines)
+        if effectiveTLSSkipVerify(tlsSkipVerify, caFile: caFile) {
+            env["LABTETHER_TLS_SKIP_VERIFY"] = "true"
+        }
+        if !caFile.isEmpty { env["LABTETHER_TLS_CA_FILE"] = caFile }
+        return env
+    }
+
+    static func effectiveTLSSkipVerify(_ skipVerify: Bool, caFile: String) -> Bool {
+        skipVerify && caFile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     static func allowsLoopbackOutbound(for normalizedWebSocketURL: String) -> Bool {

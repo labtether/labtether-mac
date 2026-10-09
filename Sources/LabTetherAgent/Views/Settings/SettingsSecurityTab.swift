@@ -41,7 +41,7 @@ struct SettingsSecurityTab: View {
                 Image(systemName: "info.circle")
                     .font(.system(size: 10))
                     .foregroundStyle(LT.textMuted)
-                Text("TLS settings apply when using wss:// hub URLs.")
+                Text("TLS settings apply to wss:// hubs. A CA file keeps certificate checks on.")
                     .font(LT.inter(10, weight: .medium))
                     .foregroundStyle(LT.textMuted)
                 Spacer()

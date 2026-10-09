@@ -82,6 +82,38 @@ final class AgentSettingsNormalizationTests: XCTestCase {
         XCTAssertFalse(AgentEnvironmentBuilder.allowsLoopbackOutbound(for: "wss://hub.example.com/ws/agent"))
     }
 
+    func testChildEnvironmentKeepsCustomCAAndOneUseGroup() throws {
+        let suiteName = "LabTetherAgentTests.\(UUID().uuidString)"
+        let store = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        let support = FileManager.default.temporaryDirectory
+            .appendingPathComponent("labtether-agent-environment-\(UUID().uuidString)")
+        defer {
+            store.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: support)
+        }
+        let settings = AgentSettings(testSettingsStore: store, appSupportDirectory: support)
+        settings.groupID = " qa "
+        settings.tlsSkipVerify = true
+        settings.tlsCAFile = " /qa/hub-ca.pem "
+        try Data("one-use-test-token\n".utf8).write(to: URL(fileURLWithPath: settings.enrollmentTokenFilePath))
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o600], ofItemAtPath: settings.enrollmentTokenFilePath
+        )
+
+        let pending = try settings.buildEnvironment()
+        XCTAssertEqual(pending["AGENT_GROUP_ID"], "qa")
+        XCTAssertEqual(pending["LABTETHER_TLS_CA_FILE"], "/qa/hub-ca.pem")
+        XCTAssertNil(pending["LABTETHER_TLS_SKIP_VERIFY"])
+        XCTAssertEqual(pending["LABTETHER_ENROLLMENT_TOKEN_FILE"], settings.enrollmentTokenFilePath)
+
+        try FileManager.default.removeItem(atPath: settings.enrollmentTokenFilePath)
+        let durable = try settings.buildEnvironment()
+        XCTAssertNil(durable["AGENT_GROUP_ID"])
+        XCTAssertNil(durable["LABTETHER_ENROLLMENT_TOKEN_FILE"])
+        XCTAssertEqual(durable["LABTETHER_TLS_CA_FILE"], "/qa/hub-ca.pem")
+        XCTAssertNil(durable["LABTETHER_TLS_SKIP_VERIFY"])
+    }
+
     func testDockerEndpointValidationAllowsAbsolutePathAndHTTPSURL() {
         XCTAssertNil(AgentSettingsNormalization.dockerEndpointValidationError("/var/run/docker.sock"))
         XCTAssertNil(AgentSettingsNormalization.dockerEndpointValidationError("unix:///var/run/docker.sock"))
