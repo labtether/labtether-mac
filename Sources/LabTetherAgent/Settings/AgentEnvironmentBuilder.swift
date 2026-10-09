@@ -55,10 +55,19 @@ enum AgentEnvironmentBuilder {
             )
         }
         if !settings.assetID.isEmpty { env["AGENT_ASSET_ID"] = settings.assetID }
-        if !settings.groupID.isEmpty { env["AGENT_GROUP_ID"] = settings.groupID }
+        if let groupID = enrollmentGroupID(
+            groupID: settings.groupID,
+            enrollmentToken: trimmedEnrollmentToken,
+            hasPersistedEnrollmentToken: settings.hasPersistedEnrollmentToken
+        ) {
+            env["AGENT_GROUP_ID"] = groupID
+        }
         env["AGENT_PORT"] = settings.normalizedAgentPort()
-        if settings.tlsSkipVerify { env["LABTETHER_TLS_SKIP_VERIFY"] = "true" }
-        if !settings.tlsCAFile.isEmpty { env["LABTETHER_TLS_CA_FILE"] = settings.tlsCAFile }
+        let caFile = settings.tlsCAFile.trimmingCharacters(in: .whitespacesAndNewlines)
+        if effectiveTLSSkipVerify(settings.tlsSkipVerify, caFile: caFile) {
+            env["LABTETHER_TLS_SKIP_VERIFY"] = "true"
+        }
+        if !caFile.isEmpty { env["LABTETHER_TLS_CA_FILE"] = caFile }
         env["LABTETHER_DOCKER_ENABLED"] = settings.normalizedDockerMode()
         env["LABTETHER_DOCKER_SOCKET"] = settings.normalizedDockerEndpoint()
         env["LABTETHER_DOCKER_DISCOVERY_INTERVAL"] = settings.normalizedDockerDiscoveryInterval()
@@ -156,6 +165,24 @@ enum AgentEnvironmentBuilder {
             }
         }
         return env
+    }
+
+    /// Group selection is one-use enrollment intent. Once the Go child has a
+    /// durable credential, Hub placement is authoritative on later heartbeats.
+    static func enrollmentGroupID(
+        groupID: String,
+        enrollmentToken: String,
+        hasPersistedEnrollmentToken: Bool
+    ) -> String? {
+        let trimmedGroupID = groupID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedGroupID.isEmpty else { return nil }
+        let hasEnrollmentIntent = !enrollmentToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            hasPersistedEnrollmentToken
+        return hasEnrollmentIntent ? trimmedGroupID : nil
+    }
+
+    static func effectiveTLSSkipVerify(_ skipVerify: Bool, caFile: String) -> Bool {
+        skipVerify && caFile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     static func allowsLoopbackOutbound(for normalizedWebSocketURL: String) -> Bool {

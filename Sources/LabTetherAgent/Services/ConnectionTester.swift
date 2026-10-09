@@ -350,7 +350,7 @@ enum ConnectionTester {
         // The delegate is always installed so redirect refusal cannot be bypassed
         // when certificate verification remains enabled.
         let delegate = HubProbeSessionDelegate(
-            tlsSkipVerify: tlsSkipVerify,
+            tlsSkipVerify: AgentEnvironmentBuilder.effectiveTLSSkipVerify(tlsSkipVerify, caFile: tlsCAFile),
             trustedCertificates: trustedCertificates
         )
         let session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)

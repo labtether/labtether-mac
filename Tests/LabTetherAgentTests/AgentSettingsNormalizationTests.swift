@@ -82,6 +82,33 @@ final class AgentSettingsNormalizationTests: XCTestCase {
         XCTAssertFalse(AgentEnvironmentBuilder.allowsLoopbackOutbound(for: "wss://hub.example.com/ws/agent"))
     }
 
+    func testGroupSelectionOnlyLeavesWrapperDuringEnrollment() {
+        XCTAssertEqual(
+            AgentEnvironmentBuilder.enrollmentGroupID(
+                groupID: " qa ", enrollmentToken: "one-use-token", hasPersistedEnrollmentToken: false
+            ),
+            "qa"
+        )
+        XCTAssertEqual(
+            AgentEnvironmentBuilder.enrollmentGroupID(
+                groupID: "qa", enrollmentToken: "", hasPersistedEnrollmentToken: true
+            ),
+            "qa"
+        )
+        XCTAssertNil(
+            AgentEnvironmentBuilder.enrollmentGroupID(
+                groupID: "qa", enrollmentToken: "", hasPersistedEnrollmentToken: false
+            )
+        )
+    }
+
+    func testCustomCAKeepsCertificateChecksOnWithOldSkipSetting() {
+        XCTAssertFalse(AgentEnvironmentBuilder.effectiveTLSSkipVerify(true, caFile: "/qa/hub-ca.pem"))
+        XCTAssertFalse(AgentEnvironmentBuilder.effectiveTLSSkipVerify(true, caFile: "  /qa/hub-ca.pem  "))
+        XCTAssertTrue(AgentEnvironmentBuilder.effectiveTLSSkipVerify(true, caFile: ""))
+        XCTAssertFalse(AgentEnvironmentBuilder.effectiveTLSSkipVerify(false, caFile: ""))
+    }
+
     func testDockerEndpointValidationAllowsAbsolutePathAndHTTPSURL() {
         XCTAssertNil(AgentSettingsNormalization.dockerEndpointValidationError("/var/run/docker.sock"))
         XCTAssertNil(AgentSettingsNormalization.dockerEndpointValidationError("unix:///var/run/docker.sock"))

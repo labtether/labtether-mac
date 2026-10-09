@@ -142,7 +142,7 @@ struct SettingsConnectionTab: View {
 
                 SettingsIconField(icon: "mappin.circle.fill", label: "Group ID",
                                   text: $settings.groupID,
-                                  prompt: "Optional group assignment",
+                                  prompt: "Optional enrollment group",
                                   onChange: { settings.markChanged() })
             }
 
