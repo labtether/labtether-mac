@@ -31,6 +31,7 @@ final class AgentSettings: ObservableObject {
     static let allowedLogLevels: Set<String> = ["debug", "info", "warn", "error"]
     private var isLoadingSecrets = false
     private var secretPersistenceIssueMap: [String: String] = [:]
+    private let appSupportDirectoryOverride: URL?
     private(set) var localAPIAuthToken: String = ""
 
     // Default to local secure hub.
@@ -86,8 +87,18 @@ final class AgentSettings: ObservableObject {
     @Published private(set) var secretPersistenceErrors: [String] = []
 
     private init() {
+        appSupportDirectoryOverride = nil
         ManagedAppUpdatePolicy.migrateLegacyPreference(in: Self.settingsStore)
         loadSecretsFromKeychain()
+    }
+
+    /// Keeps settings and runtime files separate from the signed-in user in tests.
+    init(testSettingsStore: UserDefaults, appSupportDirectory: URL) {
+        appSupportDirectoryOverride = appSupportDirectory
+        _hubURL = AppStorage(wrappedValue: "wss://localhost:8443/ws/agent", "hubURL", store: testSettingsStore)
+        _groupID = AppStorage(wrappedValue: "", "groupID", store: testSettingsStore)
+        _tlsSkipVerify = AppStorage(wrappedValue: false, "tlsSkipVerify", store: testSettingsStore)
+        _tlsCAFile = AppStorage(wrappedValue: "", "tlsCAFile", store: testSettingsStore)
     }
 
     /// Whether the minimum required config is present to start the agent.
@@ -121,7 +132,7 @@ final class AgentSettings: ObservableObject {
 
     var appSupportDirectory: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let dir = appSupport.appendingPathComponent("LabTether")
+        let dir = appSupportDirectoryOverride ?? appSupport.appendingPathComponent("LabTether")
         try? FileManager.default.createDirectory(
             at: dir,
             withIntermediateDirectories: true,
