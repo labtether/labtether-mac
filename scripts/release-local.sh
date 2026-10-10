@@ -167,8 +167,8 @@ esac
 for command_name in codesign ditto find git go lipo plutil security shasum spctl swift tar xattr xcrun; do
   command -v "${command_name}" >/dev/null 2>&1 || fail "a required local release command is unavailable"
 done
-[[ "$(go version)" == "go version go1.26.9 "* ]] \
-  || fail "local Go release builder must be go1.26.9"
+[[ "$(go version)" == "go version go1.27.2 "* ]] \
+  || fail "local Go release builder must be go1.27.2"
 
 TEMP_BASE="$(cd "${TMPDIR:-/tmp}" && pwd -P)"
 if path_is_within "${TEMP_BASE}" "${REPO_ROOT}" || path_is_within "${TEMP_BASE}" "${AGENT_REPO}"; then

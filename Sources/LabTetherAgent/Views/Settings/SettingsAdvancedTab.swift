@@ -271,79 +271,95 @@ struct SettingsAdvancedTab: View {
                 .padding(.horizontal, LT.space4)
             }
 
-            SettingsCardSection("REMOTE DESKTOP / WEBRTC") {
-                SettingsToggleRow(icon: "display.2", label: "Enable WebRTC Streaming",
-                                  isOn: $settings.webrtcEnabled,
-                                  onChange: { settings.markChanged() })
+            SettingsCardSection("REMOTE DESKTOP") {
+                if AgentSettings.webRTCRuntimeSupported {
+                    SettingsToggleRow(icon: "display.2", label: "Enable WebRTC Streaming",
+                                      isOn: $settings.webrtcEnabled,
+                                      onChange: { settings.markChanged() })
 
-                if settings.webrtcEnabled {
-                    // Screen Recording permission status
-                    HStack(spacing: LT.space8) {
-                        Image(systemName: ScreenRecordingPermission.isGranted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(ScreenRecordingPermission.isGranted ? LT.ok : LT.warn)
-                            .frame(width: 16)
-                        Text("Screen Recording")
-                            .font(LT.inter(12, weight: .medium))
-                            .foregroundStyle(LT.textPrimary)
-                        Spacer()
-                        if ScreenRecordingPermission.isGranted {
-                            Text("Granted")
-                                .font(LT.mono(11))
-                                .foregroundStyle(LT.ok)
-                        } else {
-                            Button("Open Settings") {
-                                ScreenRecordingPermission.openSettings()
+                    if settings.webrtcEnabled {
+                        // Screen Recording permission status
+                        HStack(spacing: LT.space8) {
+                            Image(systemName: ScreenRecordingPermission.isGranted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(ScreenRecordingPermission.isGranted ? LT.ok : LT.warn)
+                                .frame(width: 16)
+                            Text("Screen Recording")
+                                .font(LT.inter(12, weight: .medium))
+                                .foregroundStyle(LT.textPrimary)
+                            Spacer()
+                            if ScreenRecordingPermission.isGranted {
+                                Text("Granted")
+                                    .font(LT.mono(11))
+                                    .foregroundStyle(LT.ok)
+                            } else {
+                                Button("Open Settings") {
+                                    ScreenRecordingPermission.openSettings()
+                                }
+                                .buttonStyle(.plain)
+                                .font(LT.inter(11, weight: .medium))
+                                .foregroundStyle(LT.accent)
                             }
-                            .buttonStyle(.plain)
-                            .font(LT.inter(11, weight: .medium))
-                            .foregroundStyle(LT.accent)
                         }
+                        .padding(.horizontal, LT.space12)
+                        .padding(.vertical, LT.space4)
+                        .background(LT.panelGlass, in: RoundedRectangle(cornerRadius: LT.radiusSm, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: LT.radiusSm, style: .continuous)
+                                .strokeBorder(LT.panelBorder, lineWidth: 1)
+                        )
+                    }
+
+                    SettingsIconField(icon: "network", label: "STUN URL",
+                                      text: $settings.webrtcStunURL,
+                                      prompt: "stun:stun.l.google.com:19302",
+                                      onChange: { settings.markChanged() })
+
+                    SettingsIconField(icon: "server.rack", label: "TURN URL",
+                                      text: $settings.webrtcTurnURL,
+                                      prompt: "turn:turn.example.com:3478?transport=udp",
+                                      onChange: { settings.markChanged() })
+
+                    SettingsIconField(icon: "person.crop.circle", label: "TURN Username",
+                                      text: $settings.webrtcTurnUser,
+                                      prompt: "Optional",
+                                      onChange: { settings.markChanged() })
+
+                    SettingsSecureIconField(icon: "lock.shield", label: "TURN Password",
+                                            text: $settings.webrtcTurnPass,
+                                            prompt: "Optional (stored in keychain)",
+                                            onChange: { settings.markChanged() })
+
+                    SettingsIconField(icon: "speedometer", label: "Capture FPS",
+                                      text: $settings.captureFPS,
+                                      prompt: "30",
+                                      onChange: {
+                                          let filtered = settings.captureFPS.filter { $0.isNumber }
+                                          if filtered != settings.captureFPS {
+                                              settings.captureFPS = filtered
+                                          }
+                                          if let fps = Int(filtered), fps > 120 {
+                                              settings.captureFPS = "120"
+                                          } else if let fps = Int(filtered), fps < 5 && !filtered.isEmpty {
+                                              settings.captureFPS = "5"
+                                          }
+                                          settings.markChanged()
+                                      })
+                } else {
+                    VStack(alignment: .leading, spacing: LT.space8) {
+                        Text("Remote desktop uses macOS Screen Sharing. WebRTC streaming is not available in the macOS agent.")
+                            .font(LT.inter(12))
+                            .foregroundStyle(LT.textSecondary)
+                        Button("Open Screen Sharing Settings") {
+                            ScreenSharingMonitor.openSharingSettings()
+                        }
+                        .buttonStyle(.plain)
+                        .font(LT.inter(11, weight: .medium))
+                        .foregroundStyle(LT.accent)
                     }
                     .padding(.horizontal, LT.space12)
                     .padding(.vertical, LT.space4)
-                    .background(LT.panelGlass, in: RoundedRectangle(cornerRadius: LT.radiusSm, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: LT.radiusSm, style: .continuous)
-                            .strokeBorder(LT.panelBorder, lineWidth: 1)
-                    )
                 }
-
-                SettingsIconField(icon: "network", label: "STUN URL",
-                                  text: $settings.webrtcStunURL,
-                                  prompt: "stun:stun.l.google.com:19302",
-                                  onChange: { settings.markChanged() })
-
-                SettingsIconField(icon: "server.rack", label: "TURN URL",
-                                  text: $settings.webrtcTurnURL,
-                                  prompt: "turn:turn.example.com:3478?transport=udp",
-                                  onChange: { settings.markChanged() })
-
-                SettingsIconField(icon: "person.crop.circle", label: "TURN Username",
-                                  text: $settings.webrtcTurnUser,
-                                  prompt: "Optional",
-                                  onChange: { settings.markChanged() })
-
-                SettingsSecureIconField(icon: "lock.shield", label: "TURN Password",
-                                        text: $settings.webrtcTurnPass,
-                                        prompt: "Optional (stored in keychain)",
-                                        onChange: { settings.markChanged() })
-
-                SettingsIconField(icon: "speedometer", label: "Capture FPS",
-                                  text: $settings.captureFPS,
-                                  prompt: "30",
-                                  onChange: {
-                                      let filtered = settings.captureFPS.filter { $0.isNumber }
-                                      if filtered != settings.captureFPS {
-                                          settings.captureFPS = filtered
-                                      }
-                                      if let fps = Int(filtered), fps > 120 {
-                                          settings.captureFPS = "120"
-                                      } else if let fps = Int(filtered), fps < 5 && !filtered.isEmpty {
-                                          settings.captureFPS = "5"
-                                          }
-                                          settings.markChanged()
-                                  })
             }
 
             SettingsCardSection("MENU BAR") {
