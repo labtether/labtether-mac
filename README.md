@@ -55,7 +55,10 @@ For detailed setup, see the [macOS agent setup guide](https://labtether.com/docs
 
 ## Build From Source
 
-Requires Xcode with Swift 5.9+ and macOS 13+ deployment target.
+Use stable Xcode 27 for local builds. The macOS 13 deployment target and
+Swift 5 language mode remain supported. Hosted CI uses the current stable
+`macos-26` image (Xcode 26.6 / Swift 6.3.3) until Xcode 27 is available on
+a stable runner image; no preview or larger paid runner is required.
 The sibling [`labtether-agent`](https://github.com/labtether/labtether-agent)
 checkout and its declared Go toolchain are also required because the native app
 always ships the Go agent core inside its signed application bundle.

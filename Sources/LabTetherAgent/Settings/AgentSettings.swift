@@ -20,7 +20,8 @@ final class AgentSettings: ObservableObject {
     private static let apiTokenAccount = "apiToken"
     private static let enrollmentTokenAccount = "enrollmentToken"
     private static let webrtcTurnPassAccount = "webrtcTurnPass"
-    static let webRTCRuntimeSupported = true
+    // The bundled Go runtime supports WebRTC on Linux; macOS uses Screen Sharing.
+    static let webRTCRuntimeSupported = false
     static let shared = AgentSettings()
 
     // swiftlint:disable:next private_over_fileprivate
@@ -99,6 +100,8 @@ final class AgentSettings: ObservableObject {
         _groupID = AppStorage(wrappedValue: "", "groupID", store: testSettingsStore)
         _tlsSkipVerify = AppStorage(wrappedValue: false, "tlsSkipVerify", store: testSettingsStore)
         _tlsCAFile = AppStorage(wrappedValue: "", "tlsCAFile", store: testSettingsStore)
+        _webrtcEnabled = AppStorage(wrappedValue: true, "webrtcEnabled", store: testSettingsStore)
+        _captureFPS = AppStorage(wrappedValue: "30", "captureFPS", store: testSettingsStore)
     }
 
     /// Whether the minimum required config is present to start the agent.

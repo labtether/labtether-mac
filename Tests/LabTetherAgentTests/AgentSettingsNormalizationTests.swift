@@ -93,6 +93,8 @@ final class AgentSettingsNormalizationTests: XCTestCase {
         }
         let settings = AgentSettings(testSettingsStore: store, appSupportDirectory: support)
         settings.groupID = " qa "
+        settings.webrtcEnabled = true
+        settings.captureFPS = "invalid legacy value"
         settings.tlsSkipVerify = true
         settings.tlsCAFile = " /qa/hub-ca.pem "
         try Data("one-use-test-token\n".utf8).write(to: URL(fileURLWithPath: settings.enrollmentTokenFilePath))
@@ -102,6 +104,8 @@ final class AgentSettingsNormalizationTests: XCTestCase {
 
         let pending = try settings.buildEnvironment()
         XCTAssertEqual(pending["AGENT_GROUP_ID"], "qa")
+        XCTAssertEqual(pending["LABTETHER_WEBRTC_ENABLED"], "false")
+        XCTAssertFalse(settings.validationErrors().contains { $0.contains("Capture FPS") })
         XCTAssertEqual(pending["LABTETHER_TLS_CA_FILE"], "/qa/hub-ca.pem")
         XCTAssertNil(pending["LABTETHER_TLS_SKIP_VERIFY"])
         XCTAssertEqual(pending["LABTETHER_ENROLLMENT_TOKEN_FILE"], settings.enrollmentTokenFilePath)

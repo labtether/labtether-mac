@@ -45,16 +45,18 @@ enum AgentSettingsValidator {
             errors.append("Log level must be one of debug, info, warn, or error.")
         }
 
-        let trimmedSTUNURL = settings.normalizedWebRTCSTUNURL().trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmedSTUNURL.isEmpty {
-            errors.append("WebRTC STUN URL cannot be empty.")
-        }
+        if settings.effectiveWebRTCEnabled {
+            let trimmedSTUNURL = settings.normalizedWebRTCSTUNURL().trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmedSTUNURL.isEmpty {
+                errors.append("WebRTC STUN URL cannot be empty.")
+            }
 
-        let trimmedCaptureFPS = settings.captureFPS.trimmingCharacters(in: .whitespacesAndNewlines)
-        if AgentSettingsNormalization.strictDecimalInteger(trimmedCaptureFPS, in: 5...120) != nil {
-            // valid
-        } else {
-            errors.append("Capture FPS must be a number between 5 and 120.")
+            let trimmedCaptureFPS = settings.captureFPS.trimmingCharacters(in: .whitespacesAndNewlines)
+            if AgentSettingsNormalization.strictDecimalInteger(trimmedCaptureFPS, in: 5...120) != nil {
+                // valid
+            } else {
+                errors.append("Capture FPS must be a number between 5 and 120.")
+            }
         }
 
         if let portListError = AgentSettingsNormalization.portListValidationError(settings.servicesDiscoveryPortScanPorts) {
