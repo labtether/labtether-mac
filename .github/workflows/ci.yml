@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || (github.event_name == 'push' && github.ref_type == 'branch' && github.ref) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref_type == 'branch') }}
+
 jobs:
   line-limit:
     name: Handwritten code / 500-line limit
@@ -27,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      mac_hub_transport: ${{ steps.select.outputs.mac_hub_transport }}
+      native_build: ${{ steps.select.outputs.native_build }}
       mac_installed_app: ${{ steps.select.outputs.mac_installed_app }}
       selected_json: ${{ steps.select.outputs.selected_json }}
     steps:
@@ -53,42 +57,33 @@ jobs:
           "${selector[@]}"
 
   build-and-test:
-    needs: [line-limit]
-    if: always()
+    needs: [line-limit, qa-select]
+    if: ${{ !cancelled() && (needs.line-limit.result != 'success' || needs.qa-select.result != 'success' || needs.qa-select.outputs.native_build != 'false') }}
     name: Fast Swift build and tests
     runs-on: macos-15
+    timeout-minutes: 20
     steps:
       - name: Require source-size gate
         shell: bash
         env:
           LINE_LIMIT_RESULT: ${{ needs.line-limit.result }}
+          QA_SELECT_RESULT: ${{ needs.qa-select.result }}
         run: |
           test "${LINE_LIMIT_RESULT}" = success
+          test "${QA_SELECT_RESULT}" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Enforce release isolation policy
         run: ./scripts/test-release-policy.sh
+      # This suite also owns the native transport, identity and enrollment checks.
       - name: Run Swift tests
-        run: swift test
-
-  mac-hub-transport:
-    name: Contract / Native Mac-to-Hub transport
-    needs: qa-select
-    if: needs.qa-select.outputs.mac_hub_transport == 'true'
-    runs-on: macos-15
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Run complete native behavioral suite
         run: swift test
 
   mac-installed-app:
     name: Contract / Installed macOS application bundle
-    needs: qa-select
-    if: needs.qa-select.outputs.mac_installed_app == 'true'
+    needs: [qa-select, build-and-test]
+    if: needs.qa-select.outputs.native_build != 'false' && needs.qa-select.outputs.mac_installed_app == 'true'
     runs-on: macos-15
     timeout-minutes: 30
     steps:

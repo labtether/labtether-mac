@@ -24,9 +24,10 @@ def _changed_paths(args: argparse.Namespace) -> list[str]:
             [
                 "git",
                 "diff",
+                "--no-renames",
                 "--name-only",
                 "-z",
-                "--diff-filter=ACMRTUXB",
+                "--diff-filter=ACDMRTUXB",
                 args.base,
                 args.head,
             ],
@@ -116,8 +117,24 @@ def select(manifest: dict, paths: list[str], full: bool) -> tuple[list[str], dic
     return selected, reasons
 
 
-def _write_outputs(path: Path, contract_ids: list[str], selected: set[str]) -> None:
+def _needs_native_build(paths: list[str], full: bool) -> bool:
+    # Skip only known documentation paths; unknown inputs still get a build.
+    return full or not paths or any(
+        not (
+            (path.startswith(("docs/", "notes/"))
+             and Path(path).suffix.lower() in (".md", ".rst", ".txt", ".png", ".jpg", ".svg", ".pdf"))
+            or ("/" not in path and (
+                Path(path).suffix.lower() in (".md", ".rst")
+                or path in ("LICENSE", "LICENSE.txt")
+            ))
+        )
+        for path in paths
+    )
+
+
+def _write_outputs(path: Path, contract_ids: list[str], selected: set[str], native_build: bool) -> None:
     with path.open("a", encoding="utf-8") as handle:
+        handle.write(f"native_build={str(native_build).lower()}\n")
         for contract_id in sorted(contract_ids):
             output_name = contract_id.replace("-", "_")
             value = "true" if contract_id in selected else "false"
@@ -153,7 +170,8 @@ def main() -> int:
     if output_path is None and os.environ.get("GITHUB_OUTPUT"):
         output_path = Path(os.environ["GITHUB_OUTPUT"])
     if output_path is not None:
-        _write_outputs(output_path, list(manifest["contracts"]), selected_set)
+        _write_outputs(output_path, list(manifest["contracts"]), selected_set,
+                       _needs_native_build(paths, args.full))
 
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         summary_path = Path(os.environ["GITHUB_STEP_SUMMARY"])
