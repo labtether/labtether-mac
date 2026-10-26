@@ -10,6 +10,8 @@ final class ScreenSharingMonitor: ObservableObject {
     @Published var isEnabled: Bool = false
     @Published var hasControlAccess: Bool = true // assume true until checked
     @Published var hasChecked: Bool = false
+    /// Last failed control-access grant, shown until a grant or check succeeds.
+    @Published private(set) var controlAccessFeedback: String?
 
     private var timer: Timer?
     private let visibleCheckInterval: TimeInterval = 30
@@ -70,6 +72,7 @@ final class ScreenSharingMonitor: ObservableObject {
                 }
                 if control {
                     self.hasNotifiedObserveOnly = false
+                    self.controlAccessFeedback = nil
                 }
             } else {
                 self.latestHasControlAccess = true // reset — irrelevant when disabled
@@ -133,16 +136,51 @@ final class ScreenSharingMonitor: ObservableObject {
         }
     }
 
+    enum ControlAccessGrantResult: Equatable {
+        case granted
+        case cancelled
+        case unavailable
+        case failed(String)
+    }
+
+    /// Runs the administrator grant and keeps any failure visible in the
+    /// Screen Sharing card until a later grant or check succeeds.
+    func requestControlAccess() {
+        switch Self.grantControlAccess() {
+        case .granted:
+            controlAccessFeedback = nil
+            check()
+        case .cancelled:
+            controlAccessFeedback = nil
+        case .unavailable:
+            controlAccessFeedback = "Screen Sharing control can only be changed from the installed app."
+        case .failed(let message):
+            controlAccessFeedback = message
+        }
+    }
+
     /// Grants full ARD control privileges using the kickstart tool (requires admin password).
-    static func grantControlAccess() {
-        guard !AppStateLocation.current.isolated else { return }
+    static func grantControlAccess() -> ControlAccessGrantResult {
+        guard !AppStateLocation.current.isolated else { return .unavailable }
         let kickstart = "/System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart"
         let command = screenSharingGrantCommand(kickstart: kickstart, user: NSUserName())
         let script = "do shell script \(appleScriptStringLiteral(command)) with administrator privileges"
-        if let appleScript = NSAppleScript(source: script) {
-            var error: NSDictionary?
-            appleScript.executeAndReturnError(&error)
+        guard let appleScript = NSAppleScript(source: script) else {
+            return .failed("Could not grant Screen Sharing control: macOS rejected the request.")
         }
+        var error: NSDictionary?
+        appleScript.executeAndReturnError(&error)
+        return grantResult(appleScriptError: error)
+    }
+
+    /// AppleScript reports a dismissed administrator prompt as error -128.
+    nonisolated static func grantResult(appleScriptError error: NSDictionary?) -> ControlAccessGrantResult {
+        guard let error else { return .granted }
+        if (error[NSAppleScript.errorNumber] as? NSNumber)?.intValue == -128 { return .cancelled }
+        let detail = (error[NSAppleScript.errorMessage] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !detail.isEmpty else { return .failed("Could not grant Screen Sharing control.") }
+        return .failed("Could not grant Screen Sharing control: \(detail.prefix(160))")
     }
 
     nonisolated static func screenSharingGrantCommand(kickstart: String, user: String) -> String {

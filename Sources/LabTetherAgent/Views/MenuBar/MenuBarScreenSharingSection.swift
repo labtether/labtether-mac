@@ -52,9 +52,15 @@ struct MenuBarScreenSharingSection: View {
                             Spacer()
                             LTPillButton("Fix", icon: "wrench", color: LT.warn) {
                                 NSApp.activate(ignoringOtherApps: true)
-                                ScreenSharingMonitor.grantControlAccess()
+                                screenSharing.requestControlAccess()
                             }
                         }
+                    }
+
+                    if let feedback = screenSharing.controlAccessFeedback {
+                        LTToast(text: feedback, icon: "xmark.octagon.fill", color: LT.bad)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityLabel(feedback)
                     }
                 }
             }
