@@ -46,6 +46,7 @@ final class SessionHistoryTracker: ObservableObject {
 
     /// Absolute path to the JSON persistence file.
     private let filePath: String
+    private let stateLocation: AppStateLocation?
 
     /// Maximum number of records to retain (oldest are dropped when exceeded).
     private let maxRecords: Int
@@ -83,8 +84,9 @@ final class SessionHistoryTracker: ObservableObject {
     ///     created if it does not already exist.
     ///   - maxRecords: Upper bound on the number of retained records. Default `500`.
     ///   - maxAgeDays: Records older than this many days are pruned. Default `30`.
-    init(filePath: String, maxRecords: Int = 500, maxAgeDays: Int = 30) {
+    init(filePath: String, maxRecords: Int = 500, maxAgeDays: Int = 30, stateLocation: AppStateLocation? = nil) {
         self.filePath = filePath
+        self.stateLocation = stateLocation
         self.maxRecords = maxRecords
         self.maxAgeDays = maxAgeDays
         load()
@@ -110,6 +112,8 @@ final class SessionHistoryTracker: ObservableObject {
             timestamp: timestamp
         )
         records.append(record)
+        // Saving waits for an idle gap; memory retention must not wait for it.
+        prune()
         scheduleDebouncedSave()
     }
 
@@ -130,7 +134,8 @@ final class SessionHistoryTracker: ObservableObject {
         saveTimer = nil
         do {
             if FileManager.default.fileExists(atPath: filePath) {
-                try FileManager.default.removeItem(atPath: filePath)
+                if let stateLocation { try stateLocation.remove("session-history.json", maximum: 8 * 1024 * 1024) }
+                else { try FileManager.default.removeItem(atPath: filePath) }
             }
         } catch {
             Self.logger.error("SessionHistoryTracker: failed to delete file: \(error.localizedDescription)")
@@ -146,17 +151,19 @@ final class SessionHistoryTracker: ObservableObject {
         let directoryURL = url.deletingLastPathComponent()
 
         do {
+            if let stateLocation {
+                try stateLocation.write(Self.jsonEncoder.encode(records), name: "session-history.json", maximum: 8 * 1024 * 1024)
+                return
+            }
             try FileManager.default.createDirectory(
                 at: directoryURL,
                 withIntermediateDirectories: true,
                 attributes: [.posixPermissions: 0o700]
             )
             let data = try Self.jsonEncoder.encode(records)
-            // Atomic write: write to a sibling temp file then rename.
-            let tempURL = directoryURL.appendingPathComponent(UUID().uuidString + ".tmp")
-            try data.write(to: tempURL, options: .atomic)
-            // Replace destination atomically.
-            _ = try FileManager.default.replaceItemAt(url, withItemAt: tempURL)
+            // Foundation owns the atomic temporary file for both first save
+            // and replacement, including cleanup if publication fails.
+            try data.write(to: url, options: .atomic)
         } catch {
             Self.logger.error("SessionHistoryTracker: save failed: \(error.localizedDescription)")
         }
@@ -177,9 +184,10 @@ final class SessionHistoryTracker: ObservableObject {
     /// Reads JSON from ``filePath``, decodes, then prunes.
     private func load() {
         let url = URL(fileURLWithPath: filePath)
-        guard FileManager.default.fileExists(atPath: filePath),
-              let data = try? Data(contentsOf: url)
-        else { return }
+        let saved: Data?
+        if let stateLocation { saved = try? stateLocation.read("session-history.json", maximum: 8 * 1024 * 1024) }
+        else { saved = try? Data(contentsOf: url) }
+        guard let data = saved else { return }
 
         do {
             records = try Self.jsonDecoder.decode([SessionRecord].self, from: data)

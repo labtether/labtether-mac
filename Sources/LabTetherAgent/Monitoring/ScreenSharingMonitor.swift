@@ -127,6 +127,7 @@ final class ScreenSharingMonitor: ObservableObject {
 
     /// Opens System Settings > General > Sharing.
     static func openSharingSettings() {
+        guard !AppStateLocation.current.isolated else { return }
         if let url = URL(string: "x-apple.systempreferences:com.apple.Sharing-Settings.extension") {
             NSWorkspace.shared.open(url)
         }
@@ -134,6 +135,7 @@ final class ScreenSharingMonitor: ObservableObject {
 
     /// Grants full ARD control privileges using the kickstart tool (requires admin password).
     static func grantControlAccess() {
+        guard !AppStateLocation.current.isolated else { return }
         let kickstart = "/System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart"
         let command = screenSharingGrantCommand(kickstart: kickstart, user: NSUserName())
         let script = "do shell script \(appleScriptStringLiteral(command)) with administrator privileges"

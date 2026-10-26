@@ -12,11 +12,13 @@ enum ScreenRecordingPermission {
     /// Returns true if already granted.
     @discardableResult
     static func request() -> Bool {
-        CGRequestScreenCaptureAccess()
+        guard !AppStateLocation.current.isolated else { return false }
+        return CGRequestScreenCaptureAccess()
     }
 
     /// Open System Settings to the Screen Recording privacy pane.
     static func openSettings() {
+        guard !AppStateLocation.current.isolated else { return }
         if let url = URL(string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_ScreenCapture") {
             NSWorkspace.shared.open(url)
         }

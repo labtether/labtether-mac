@@ -391,7 +391,7 @@ final class LocalAPIClient: ObservableObject {
                 }
 
                 let signpost = await MainActor.run { () -> (Int, Int, Int) in
-                    guard owner.isPolling else {
+                    guard !Task.isCancelled, owner.isPolling else {
                         return (4, 0, 0)
                     }
 
@@ -424,7 +424,7 @@ final class LocalAPIClient: ObservableObject {
                 guard !Task.isCancelled else { return }
                 guard let owner = self else { return }
                 let shouldRecord = await MainActor.run { () -> Bool in
-                    guard owner.isPolling else { return false }
+                    guard !Task.isCancelled, owner.isPolling else { return false }
                     owner.applyPollFailure()
                     return true
                 }

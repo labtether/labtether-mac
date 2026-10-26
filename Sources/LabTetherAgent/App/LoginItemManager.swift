@@ -6,6 +6,7 @@ enum LoginItemManager {
     /// Register or unregister the app as a login item.
     @discardableResult
     static func setEnabled(_ enabled: Bool) -> Bool {
+        guard !AppStateLocation.current.isolated else { return false }
         let service = SMAppService.mainApp
         do {
             if enabled {

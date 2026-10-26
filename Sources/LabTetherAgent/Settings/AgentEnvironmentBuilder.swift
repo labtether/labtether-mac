@@ -3,6 +3,7 @@ import Foundation
 /// Builds the environment dictionary for the Go agent process from AgentSettings.
 enum AgentEnvironmentBuilder {
     static func buildEnvironment(from settings: AgentSettings) throws -> [String: String] {
+        try settings.stateLocation?.validateRuntimeFiles()
         var env: [String: String] = [:]
 
         if let normalizedWS = settings.normalizedHubWebSocketURL() {
@@ -128,7 +129,10 @@ enum AgentEnvironmentBuilder {
         // Include common GUI-safe executable paths so tools like tailscale are discoverable.
         env["PATH"] = settings.mergedExecutablePath()
         // Inherit HOME for SSH key operations
-        if let home = ProcessInfo.processInfo.environment["HOME"] {
+        if let state = settings.stateLocation, state.isolated {
+            env["HOME"] = state.root.path
+            env["TMPDIR"] = state.root.path
+        } else if let home = ProcessInfo.processInfo.environment["HOME"] {
             env["HOME"] = home
         }
 

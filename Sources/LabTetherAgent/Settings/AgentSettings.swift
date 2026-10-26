@@ -2,13 +2,13 @@ import Foundation
 import Security
 import SwiftUI
 
-private struct AgentSettingsSecretError: LocalizedError {
+struct AgentSettingsSecretError: LocalizedError {
     let message: String
 
     var errorDescription: String? { message }
 }
 
-/// Maps @AppStorage UserDefaults properties to Go agent environment variables.
+/// Owns preferences and credentials for one app state directory.
 final class AgentSettings: ObservableObject {
     enum RuntimeSecretFileAction: Equatable {
         case persist
@@ -16,13 +16,15 @@ final class AgentSettings: ObservableObject {
         case remove
     }
 
-    private static let settingsStore: UserDefaults = .standard
-    private static let apiTokenAccount = "apiToken"
-    private static let enrollmentTokenAccount = "enrollmentToken"
-    private static let webrtcTurnPassAccount = "webrtcTurnPass"
+    static let apiTokenAccount = "apiToken"
+    static let enrollmentTokenAccount = "enrollmentToken"
+    static let webrtcTurnPassAccount = "webrtcTurnPass"
     // The bundled Go runtime supports WebRTC on Linux; macOS uses Screen Sharing.
     static let webRTCRuntimeSupported = false
-    static let shared = AgentSettings()
+    static let shared: AgentSettings = {
+        do { return try AgentSettings(location: AppStateLocation.current) }
+        catch { fputs("LabTether: state settings could not be loaded.\n", stderr); exit(78) }
+    }()
 
     // swiftlint:disable:next private_over_fileprivate
     static let allowedDockerModes: Set<String> = ["auto", "true", "false"]
@@ -30,78 +32,210 @@ final class AgentSettings: ObservableObject {
     static let allowedFileRootModes: Set<String> = ["home", "full"]
     // swiftlint:disable:next private_over_fileprivate
     static let allowedLogLevels: Set<String> = ["debug", "info", "warn", "error"]
-    private var isLoadingSecrets = false
-    private var secretPersistenceIssueMap: [String: String] = [:]
+    var isLoadingSecrets = false
+    var secretPersistenceIssueMap: [String: String] = [:]
+    let stateLocation: AppStateLocation?
+    private let preferences: AgentPreferences
+    private var loadingPreferences = false
+    private var failedPreferences = Set<String>()
+    private var defaultsObserver: NSObjectProtocol?
+    let bootstrapSecrets: AgentBootstrapSecrets
     private let appSupportDirectoryOverride: URL?
-    private(set) var localAPIAuthToken: String = ""
+    var allowsSystemIntegration: Bool { stateLocation?.isolated == false }
+    @Published private(set) var preferencePersistenceError: String?
+    var localAPIAuthToken: String = ""
 
     // Default to local secure hub.
-    @AppStorage("hubURL", store: settingsStore) var hubURL: String = "wss://localhost:8443/ws/agent"
+    @Published var hubURL: String = "wss://localhost:8443/ws/agent" {
+        didSet { savePreference(hubURL, key: "hubURL") }
+    }
     @Published var enrollmentToken: String = "" {
         didSet { persistSecret(enrollmentToken, account: Self.enrollmentTokenAccount) }
     }
     @Published var apiToken: String = "" {
         didSet { persistSecret(apiToken, account: Self.apiTokenAccount) }
     }
-    @AppStorage("assetID", store: settingsStore) var assetID: String = ""
-    @AppStorage("groupID", store: settingsStore) var groupID: String = ""
-    @AppStorage("agentPort", store: settingsStore) var agentPort: String = "8091"
-    @AppStorage("tlsSkipVerify", store: settingsStore) var tlsSkipVerify: Bool = false
-    @AppStorage("tlsCAFile", store: settingsStore) var tlsCAFile: String = ""
-    @AppStorage("dockerEnabled", store: settingsStore) var dockerEnabled: String = "auto"
-    @AppStorage("dockerEndpoint", store: settingsStore) var dockerEndpoint: String = "/var/run/docker.sock"
-    @AppStorage("dockerDiscoveryIntervalSec", store: settingsStore) var dockerDiscoveryIntervalSec: String = "30"
-    @AppStorage("filesRootMode", store: settingsStore) var filesRootMode: String = "home"
-    @AppStorage("allowRemoteOverrides", store: settingsStore) var allowRemoteOverrides: Bool = false
-    @AppStorage("logLevel", store: settingsStore) var logLevel: String = "info"
-    @AppStorage("webrtcEnabled", store: settingsStore) var webrtcEnabled: Bool = true
-    @AppStorage("webrtcStunURL", store: settingsStore) var webrtcStunURL: String = "stun:stun.l.google.com:19302"
-    @AppStorage("webrtcTurnURL", store: settingsStore) var webrtcTurnURL: String = ""
-    @AppStorage("webrtcTurnUser", store: settingsStore) var webrtcTurnUser: String = ""
+    @Published var assetID: String = "" {
+        didSet { savePreference(assetID, key: "assetID") }
+    }
+    @Published var groupID: String = "" {
+        didSet { savePreference(groupID, key: "groupID") }
+    }
+    @Published var agentPort: String = "8091" {
+        didSet { savePreference(agentPort, key: "agentPort") }
+    }
+    @Published var tlsSkipVerify: Bool = false {
+        didSet { savePreference(tlsSkipVerify, key: "tlsSkipVerify") }
+    }
+    @Published var tlsCAFile: String = "" {
+        didSet { savePreference(tlsCAFile, key: "tlsCAFile") }
+    }
+    @Published var dockerEnabled: String = "auto" {
+        didSet { savePreference(dockerEnabled, key: "dockerEnabled") }
+    }
+    @Published var dockerEndpoint: String = "/var/run/docker.sock" {
+        didSet { savePreference(dockerEndpoint, key: "dockerEndpoint") }
+    }
+    @Published var dockerDiscoveryIntervalSec: String = "30" {
+        didSet { savePreference(dockerDiscoveryIntervalSec, key: "dockerDiscoveryIntervalSec") }
+    }
+    @Published var filesRootMode: String = "home" {
+        didSet { savePreference(filesRootMode, key: "filesRootMode") }
+    }
+    @Published var allowRemoteOverrides: Bool = false {
+        didSet { savePreference(allowRemoteOverrides, key: "allowRemoteOverrides") }
+    }
+    @Published var logLevel: String = "info" {
+        didSet { savePreference(logLevel, key: "logLevel") }
+    }
+    @Published var webrtcEnabled: Bool = true {
+        didSet { savePreference(webrtcEnabled, key: "webrtcEnabled") }
+    }
+    @Published var webrtcStunURL: String = "stun:stun.l.google.com:19302" {
+        didSet { savePreference(webrtcStunURL, key: "webrtcStunURL") }
+    }
+    @Published var webrtcTurnURL: String = "" {
+        didSet { savePreference(webrtcTurnURL, key: "webrtcTurnURL") }
+    }
+    @Published var webrtcTurnUser: String = "" {
+        didSet { savePreference(webrtcTurnUser, key: "webrtcTurnUser") }
+    }
     @Published var webrtcTurnPass: String = "" {
         didSet { persistSecret(webrtcTurnPass, account: Self.webrtcTurnPassAccount) }
     }
-    @AppStorage("captureFPS", store: settingsStore) var captureFPS: String = "30"
+    @Published var captureFPS: String = "30" {
+        didSet { savePreference(captureFPS, key: "captureFPS") }
+    }
 
     var effectiveWebRTCEnabled: Bool {
         Self.webRTCRuntimeSupported && webrtcEnabled
     }
-    @AppStorage("servicesDiscoveryDockerEnabled", store: settingsStore) var servicesDiscoveryDockerEnabled: Bool = true
-    @AppStorage("servicesDiscoveryProxyEnabled", store: settingsStore) var servicesDiscoveryProxyEnabled: Bool = true
-    @AppStorage("servicesDiscoveryProxyTraefikEnabled", store: settingsStore) var servicesDiscoveryProxyTraefikEnabled: Bool = true
-    @AppStorage("servicesDiscoveryProxyCaddyEnabled", store: settingsStore) var servicesDiscoveryProxyCaddyEnabled: Bool = true
-    @AppStorage("servicesDiscoveryProxyNPMEnabled", store: settingsStore) var servicesDiscoveryProxyNPMEnabled: Bool = true
-    @AppStorage("servicesDiscoveryPortScanEnabled", store: settingsStore) var servicesDiscoveryPortScanEnabled: Bool = true
-    @AppStorage("servicesDiscoveryPortScanIncludeListening", store: settingsStore) var servicesDiscoveryPortScanIncludeListening: Bool = true
-    @AppStorage("servicesDiscoveryPortScanPorts", store: settingsStore) var servicesDiscoveryPortScanPorts: String = ""
-    @AppStorage("servicesDiscoveryLANScanEnabled", store: settingsStore) var servicesDiscoveryLANScanEnabled: Bool = false
-    @AppStorage("servicesDiscoveryLANScanCIDRs", store: settingsStore) var servicesDiscoveryLANScanCIDRs: String = ""
-    @AppStorage("servicesDiscoveryLANScanPorts", store: settingsStore) var servicesDiscoveryLANScanPorts: String = ""
-    @AppStorage("servicesDiscoveryLANScanMaxHosts", store: settingsStore) var servicesDiscoveryLANScanMaxHosts: String = "64"
-    @AppStorage("startAtLogin", store: settingsStore) var startAtLogin: Bool = false
-    @AppStorage("hasCompletedOnboarding", store: settingsStore) var hasCompletedOnboarding: Bool = false
-    @AppStorage("autoStart", store: settingsStore) var autoStart: Bool = true
-    @AppStorage("menuBarDisplayMode", store: settingsStore) var menuBarDisplayMode: String = "standard"
+    @Published var servicesDiscoveryDockerEnabled: Bool = true {
+        didSet { savePreference(servicesDiscoveryDockerEnabled, key: "servicesDiscoveryDockerEnabled") }
+    }
+    @Published var servicesDiscoveryProxyEnabled: Bool = true {
+        didSet { savePreference(servicesDiscoveryProxyEnabled, key: "servicesDiscoveryProxyEnabled") }
+    }
+    @Published var servicesDiscoveryProxyTraefikEnabled: Bool = true {
+        didSet { savePreference(servicesDiscoveryProxyTraefikEnabled, key: "servicesDiscoveryProxyTraefikEnabled") }
+    }
+    @Published var servicesDiscoveryProxyCaddyEnabled: Bool = true {
+        didSet { savePreference(servicesDiscoveryProxyCaddyEnabled, key: "servicesDiscoveryProxyCaddyEnabled") }
+    }
+    @Published var servicesDiscoveryProxyNPMEnabled: Bool = true {
+        didSet { savePreference(servicesDiscoveryProxyNPMEnabled, key: "servicesDiscoveryProxyNPMEnabled") }
+    }
+    @Published var servicesDiscoveryPortScanEnabled: Bool = true {
+        didSet { savePreference(servicesDiscoveryPortScanEnabled, key: "servicesDiscoveryPortScanEnabled") }
+    }
+    @Published var servicesDiscoveryPortScanIncludeListening: Bool = true {
+        didSet { savePreference(servicesDiscoveryPortScanIncludeListening, key: "servicesDiscoveryPortScanIncludeListening") }
+    }
+    @Published var servicesDiscoveryPortScanPorts: String = "" {
+        didSet { savePreference(servicesDiscoveryPortScanPorts, key: "servicesDiscoveryPortScanPorts") }
+    }
+    @Published var servicesDiscoveryLANScanEnabled: Bool = false {
+        didSet { savePreference(servicesDiscoveryLANScanEnabled, key: "servicesDiscoveryLANScanEnabled") }
+    }
+    @Published var servicesDiscoveryLANScanCIDRs: String = "" {
+        didSet { savePreference(servicesDiscoveryLANScanCIDRs, key: "servicesDiscoveryLANScanCIDRs") }
+    }
+    @Published var servicesDiscoveryLANScanPorts: String = "" {
+        didSet { savePreference(servicesDiscoveryLANScanPorts, key: "servicesDiscoveryLANScanPorts") }
+    }
+    @Published var servicesDiscoveryLANScanMaxHosts: String = "64" {
+        didSet { savePreference(servicesDiscoveryLANScanMaxHosts, key: "servicesDiscoveryLANScanMaxHosts") }
+    }
+    @Published var startAtLogin: Bool = false {
+        didSet { savePreference(startAtLogin, key: "startAtLogin") }
+    }
+    @Published var hasCompletedOnboarding: Bool = false {
+        didSet { savePreference(hasCompletedOnboarding, key: "hasCompletedOnboarding") }
+    }
+    @Published var autoStart: Bool = true {
+        didSet { savePreference(autoStart, key: "autoStart") }
+    }
+    @Published var menuBarDisplayMode: String = "standard" {
+        didSet { savePreference(menuBarDisplayMode, key: "menuBarDisplayMode") }
+    }
 
     /// Incremented when settings are saved to signal a restart is needed.
     @Published var settingsVersion: Int = 0
-    @Published private(set) var secretPersistenceErrors: [String] = []
+    @Published var secretPersistenceErrors: [String] = []
 
-    private init() {
-        appSupportDirectoryOverride = nil
-        ManagedAppUpdatePolicy.migrateLegacyPreference(in: Self.settingsStore)
+    init(location: AppStateLocation) throws {
+        stateLocation = location
+        appSupportDirectoryOverride = location.root
+        preferences = location.isolated ? try AgentPreferences(location: location) : AgentPreferences(defaults: .standard)
+        bootstrapSecrets = AgentBootstrapSecrets(usesKeychain: !location.isolated)
+        loadPreferences()
         loadSecretsFromKeychain()
+        observeDefaults()
     }
 
-    /// Keeps settings and runtime files separate from the signed-in user in tests.
+    /// Test suites never read or write the owner's defaults or Keychain.
     init(testSettingsStore: UserDefaults, appSupportDirectory: URL) {
+        stateLocation = nil
         appSupportDirectoryOverride = appSupportDirectory
-        _hubURL = AppStorage(wrappedValue: "wss://localhost:8443/ws/agent", "hubURL", store: testSettingsStore)
-        _groupID = AppStorage(wrappedValue: "", "groupID", store: testSettingsStore)
-        _tlsSkipVerify = AppStorage(wrappedValue: false, "tlsSkipVerify", store: testSettingsStore)
-        _tlsCAFile = AppStorage(wrappedValue: "", "tlsCAFile", store: testSettingsStore)
-        _webrtcEnabled = AppStorage(wrappedValue: true, "webrtcEnabled", store: testSettingsStore)
-        _captureFPS = AppStorage(wrappedValue: "30", "captureFPS", store: testSettingsStore)
+        preferences = AgentPreferences(defaults: testSettingsStore)
+        bootstrapSecrets = AgentBootstrapSecrets(usesKeychain: false)
+        loadPreferences()
+        observeDefaults()
+    }
+
+    deinit {
+        if let defaultsObserver { NotificationCenter.default.removeObserver(defaultsObserver) }
+    }
+
+    private func observeDefaults() {
+        defaultsObserver = preferences.observeChanges { [weak self] in
+            DispatchQueue.main.async { [weak self] in self?.loadPreferences() }
+        }
+    }
+
+    private func savePreference(_ value: Any, key: String) {
+        guard !loadingPreferences else { return }
+        do { try preferences.set(value, key: key); failedPreferences.remove(key) }
+        catch { failedPreferences.insert(key) }
+        preferencePersistenceError = failedPreferences.isEmpty ? nil : "Settings could not be saved to the selected state directory."
+    }
+
+    private func loadPreferences() {
+        loadingPreferences = true
+        defer { loadingPreferences = false }
+        hubURL = preferences.string("hubURL", default: "wss://localhost:8443/ws/agent")
+        assetID = preferences.string("assetID", default: "")
+        groupID = preferences.string("groupID", default: "")
+        agentPort = preferences.string("agentPort", default: "8091")
+        tlsSkipVerify = preferences.bool("tlsSkipVerify", default: false)
+        tlsCAFile = preferences.string("tlsCAFile", default: "")
+        dockerEnabled = preferences.string("dockerEnabled", default: "auto")
+        dockerEndpoint = preferences.string("dockerEndpoint", default: "/var/run/docker.sock")
+        dockerDiscoveryIntervalSec = preferences.string("dockerDiscoveryIntervalSec", default: "30")
+        filesRootMode = preferences.string("filesRootMode", default: "home")
+        allowRemoteOverrides = preferences.bool("allowRemoteOverrides", default: false)
+        logLevel = preferences.string("logLevel", default: "info")
+        webrtcEnabled = preferences.bool("webrtcEnabled", default: true)
+        webrtcStunURL = preferences.string("webrtcStunURL", default: "stun:stun.l.google.com:19302")
+        webrtcTurnURL = preferences.string("webrtcTurnURL", default: "")
+        webrtcTurnUser = preferences.string("webrtcTurnUser", default: "")
+        captureFPS = preferences.string("captureFPS", default: "30")
+        servicesDiscoveryDockerEnabled = preferences.bool("servicesDiscoveryDockerEnabled", default: true)
+        servicesDiscoveryProxyEnabled = preferences.bool("servicesDiscoveryProxyEnabled", default: true)
+        servicesDiscoveryProxyTraefikEnabled = preferences.bool("servicesDiscoveryProxyTraefikEnabled", default: true)
+        servicesDiscoveryProxyCaddyEnabled = preferences.bool("servicesDiscoveryProxyCaddyEnabled", default: true)
+        servicesDiscoveryProxyNPMEnabled = preferences.bool("servicesDiscoveryProxyNPMEnabled", default: true)
+        servicesDiscoveryPortScanEnabled = preferences.bool("servicesDiscoveryPortScanEnabled", default: true)
+        servicesDiscoveryPortScanIncludeListening = preferences.bool("servicesDiscoveryPortScanIncludeListening", default: true)
+        servicesDiscoveryPortScanPorts = preferences.string("servicesDiscoveryPortScanPorts", default: "")
+        servicesDiscoveryLANScanEnabled = preferences.bool("servicesDiscoveryLANScanEnabled", default: false)
+        servicesDiscoveryLANScanCIDRs = preferences.string("servicesDiscoveryLANScanCIDRs", default: "")
+        servicesDiscoveryLANScanPorts = preferences.string("servicesDiscoveryLANScanPorts", default: "")
+        servicesDiscoveryLANScanMaxHosts = preferences.string("servicesDiscoveryLANScanMaxHosts", default: "64")
+        startAtLogin = preferences.bool("startAtLogin", default: false)
+        hasCompletedOnboarding = preferences.bool("hasCompletedOnboarding", default: false)
+        autoStart = preferences.bool("autoStart", default: true)
+        menuBarDisplayMode = preferences.string("menuBarDisplayMode", default: "standard")
     }
 
     /// Whether the minimum required config is present to start the agent.
@@ -134,6 +268,7 @@ final class AgentSettings: ObservableObject {
     }
 
     var appSupportDirectory: URL {
+        if let stateLocation { return stateLocation.root }
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let dir = appSupportDirectoryOverride ?? appSupport.appendingPathComponent("LabTether")
         try? FileManager.default.createDirectory(
@@ -350,223 +485,4 @@ final class AgentSettings: ObservableObject {
         AgentSettingsNormalization.dockerEndpointValidationError(raw)
     }
 
-    private func loadSecretsFromKeychain() {
-        isLoadingSecrets = true
-        apiToken = KeychainSecretStore.load(account: Self.apiTokenAccount)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        enrollmentToken = KeychainSecretStore.load(account: Self.enrollmentTokenAccount)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        webrtcTurnPass = KeychainSecretStore.load(account: Self.webrtcTurnPassAccount)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        isLoadingSecrets = false
-    }
-
-    private func persistSecret(_ rawValue: String, account: String) {
-        if isLoadingSecrets {
-            return
-        }
-        let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        let issueKey = keychainIssueKey(for: account)
-        if value.isEmpty {
-            let status = KeychainSecretStore.deleteStatus(account: account)
-            if status == errSecSuccess {
-                setSecretPersistenceIssue(key: issueKey, message: nil)
-                synchronizeRuntimeSecretFilesAfterSecretChange(account: account)
-            } else {
-                setSecretPersistenceIssue(
-                    key: issueKey,
-                    message: "\(secretLabel(for: account)) could not be removed from the macOS Keychain: \(KeychainSecretStore.errorMessage(for: status))"
-                )
-            }
-            return
-        }
-        let status = KeychainSecretStore.saveStatus(value, account: account)
-        if status == errSecSuccess {
-            setSecretPersistenceIssue(key: issueKey, message: nil)
-        } else {
-            setSecretPersistenceIssue(
-                key: issueKey,
-                message: "\(secretLabel(for: account)) could not be saved to the macOS Keychain: \(KeychainSecretStore.errorMessage(for: status))"
-            )
-        }
-    }
-
-    func mergedExecutablePath() -> String {
-        let defaults = [
-            "/opt/homebrew/bin",
-            "/usr/local/bin",
-            "/usr/bin",
-            "/bin",
-            "/usr/sbin",
-            "/sbin",
-            "/Applications/Tailscale.app/Contents/MacOS",
-        ]
-
-        var combined: [String] = []
-        if let inherited = ProcessInfo.processInfo.environment["PATH"] {
-            combined.append(contentsOf: inherited.split(separator: ":").map(String.init))
-        }
-        combined.append(contentsOf: defaults)
-
-        var seen = Set<String>()
-        let deduped = combined.filter { part in
-            let trimmed = part.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else { return false }
-            if seen.contains(trimmed) { return false }
-            seen.insert(trimmed)
-            return true
-        }
-        return deduped.joined(separator: ":")
-    }
-
-    func cleanupEphemeralSecrets() {
-        try? removeRuntimeSecretIfNeeded(
-            at: localAPIAuthTokenFilePath,
-            issueKey: "runtime.localAPIAuthToken",
-            label: "Local API auth token"
-        )
-        localAPIAuthToken = ""
-    }
-
-    /// Remove a one-use enrollment secret after the Go child has either issued
-    /// or loaded the durable agent credential. This deliberately preserves the
-    /// agent token file so an enrolled app can reconnect after relaunch.
-    func clearConsumedEnrollmentTokenPreservingAgentToken() {
-        guard !enrollmentToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return
-        }
-
-        let status = KeychainSecretStore.deleteStatus(account: Self.enrollmentTokenAccount)
-        guard status == errSecSuccess else {
-            setSecretPersistenceIssue(
-                key: keychainIssueKey(for: Self.enrollmentTokenAccount),
-                message: "Enrollment token could not be removed from the macOS Keychain: \(KeychainSecretStore.errorMessage(for: status))"
-            )
-            return
-        }
-
-        isLoadingSecrets = true
-        enrollmentToken = ""
-        isLoadingSecrets = false
-        setSecretPersistenceIssue(key: keychainIssueKey(for: Self.enrollmentTokenAccount), message: nil)
-        try? removeRuntimeSecretIfNeeded(
-            at: enrollmentTokenFilePath,
-            issueKey: "runtime.enrollmentToken",
-            label: "Enrollment token"
-        )
-    }
-
-    private func synchronizeRuntimeSecretFilesAfterSecretChange(account: String) {
-        switch account {
-        case Self.apiTokenAccount:
-            if Self.runtimeAPITokenFileAction(
-                apiToken: apiToken,
-                enrollmentToken: enrollmentToken,
-                hasPersistedAgentToken: hasPersistedAgentToken
-            ) == .remove {
-                try? removeRuntimeSecretIfNeeded(
-                    at: tokenFilePath,
-                    issueKey: "runtime.apiToken",
-                    label: "API token"
-                )
-            }
-        case Self.enrollmentTokenAccount:
-            try? removeRuntimeSecretIfNeeded(
-                at: enrollmentTokenFilePath,
-                issueKey: "runtime.enrollmentToken",
-                label: "Enrollment token"
-            )
-        case Self.webrtcTurnPassAccount:
-            try? removeRuntimeSecretIfNeeded(
-                at: webrtcTurnPassFilePath,
-                issueKey: "runtime.turnPass",
-                label: "WebRTC TURN password"
-            )
-        default:
-            break
-        }
-    }
-
-    func persistRuntimeSecret(_ value: String, to path: String, issueKey: String, label: String) throws {
-        let fileURL = URL(fileURLWithPath: path)
-        let parent = fileURL.deletingLastPathComponent()
-        do {
-            try FileManager.default.createDirectory(
-                at: parent,
-                withIntermediateDirectories: true,
-                attributes: [.posixPermissions: 0o700]
-            )
-            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: parent.path)
-            try (value + "\n").write(to: fileURL, atomically: true, encoding: .utf8)
-            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
-            setSecretPersistenceIssue(key: issueKey, message: nil)
-        } catch {
-            let message = "\(label) could not be written to \(path): \(error.localizedDescription)"
-            setSecretPersistenceIssue(key: issueKey, message: message)
-            throw AgentSettingsSecretError(message: message)
-        }
-    }
-
-    func removeRuntimeSecretIfNeeded(at path: String, issueKey: String, label: String) throws {
-        guard FileManager.default.fileExists(atPath: path) else {
-            setSecretPersistenceIssue(key: issueKey, message: nil)
-            return
-        }
-        do {
-            try FileManager.default.removeItem(atPath: path)
-            setSecretPersistenceIssue(key: issueKey, message: nil)
-        } catch {
-            let message = "\(label) could not be removed from \(path): \(error.localizedDescription)"
-            setSecretPersistenceIssue(key: issueKey, message: message)
-            throw AgentSettingsSecretError(message: message)
-        }
-    }
-
-    func ensureLocalAPIAuthToken() throws -> String {
-        if localAPIAuthToken.isEmpty {
-            localAPIAuthToken = generateLocalAPIAuthToken()
-        }
-        try persistRuntimeSecret(
-            localAPIAuthToken,
-            to: localAPIAuthTokenFilePath,
-            issueKey: "runtime.localAPIAuthToken",
-            label: "Local API auth token"
-        )
-        return localAPIAuthTokenFilePath
-    }
-
-    private func generateLocalAPIAuthToken() -> String {
-        var bytes = [UInt8](repeating: 0, count: 32)
-        let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-        if status == errSecSuccess {
-            return bytes.map { String(format: "%02x", $0) }.joined()
-        }
-        return UUID().uuidString.replacingOccurrences(of: "-", with: "") + UUID().uuidString.replacingOccurrences(of: "-", with: "")
-    }
-
-    private func keychainIssueKey(for account: String) -> String {
-        "keychain.\(account)"
-    }
-
-    private func secretLabel(for account: String) -> String {
-        switch account {
-        case Self.apiTokenAccount:
-            return "API token"
-        case Self.enrollmentTokenAccount:
-            return "Enrollment token"
-        case Self.webrtcTurnPassAccount:
-            return "WebRTC TURN password"
-        default:
-            return "Secret"
-        }
-    }
-
-    private func setSecretPersistenceIssue(key: String, message: String?) {
-        if let message, !message.isEmpty {
-            secretPersistenceIssueMap[key] = message
-        } else {
-            secretPersistenceIssueMap.removeValue(forKey: key)
-        }
-        secretPersistenceErrors = secretPersistenceIssueMap.keys.sorted().compactMap { secretPersistenceIssueMap[$0] }
-    }
 }

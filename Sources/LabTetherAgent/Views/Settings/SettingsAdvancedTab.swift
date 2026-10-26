@@ -13,6 +13,7 @@ struct SettingsAdvancedTab: View {
                                   isOn: Binding(
                                       get: { settings.startAtLogin },
                                       set: { newValue in
+                                          guard settings.allowsSystemIntegration else { return }
                                           if LoginItemManager.setEnabled(newValue) {
                                               settings.startAtLogin = newValue
                                           } else {
@@ -25,6 +26,7 @@ struct SettingsAdvancedTab: View {
                                           }
                                       }
                                   ))
+                    .disabled(!settings.allowsSystemIntegration)
 
                 SettingsToggleRow(icon: "play.circle.fill", label: "Auto-Start Agent on Launch",
                                   isOn: $settings.autoStart)

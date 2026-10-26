@@ -30,6 +30,7 @@ final class BandwidthTracker: ObservableObject {
     // MARK: - Configuration
 
     private let filePath: String
+    private let stateLocation: AppStateLocation?
     private let maxSamples: Int
     private let maxAgeDays: Int
     private let gapThreshold: TimeInterval
@@ -60,9 +61,11 @@ final class BandwidthTracker: ObservableObject {
         filePath: String,
         maxSamples: Int = 720,
         maxAgeDays: Int = 30,
-        gapThreshold: TimeInterval = 90
+        gapThreshold: TimeInterval = 90,
+        stateLocation: AppStateLocation? = nil
     ) {
         self.filePath = filePath
+        self.stateLocation = stateLocation
         self.maxSamples = maxSamples
         self.maxAgeDays = maxAgeDays
         self.gapThreshold = gapThreshold
@@ -179,7 +182,10 @@ final class BandwidthTracker: ObservableObject {
 
     /// Reads the persistence file and populates `samples`.
     private func load() {
-        guard let data = FileManager.default.contents(atPath: filePath) else { return }
+        let saved: Data?
+        if let stateLocation { saved = try? stateLocation.read("bandwidth-history.json", maximum: 8 * 1024 * 1024) }
+        else { saved = FileManager.default.contents(atPath: filePath) }
+        guard let data = saved else { return }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         guard let decoded = try? decoder.decode([BandwidthSample].self, from: data) else { return }
@@ -192,7 +198,11 @@ final class BandwidthTracker: ObservableObject {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         guard let data = try? encoder.encode(samples) else { return }
-        FileManager.default.createFile(atPath: filePath, contents: data)
+        if let stateLocation {
+            try? stateLocation.write(data, name: "bandwidth-history.json", maximum: 8 * 1024 * 1024)
+        } else {
+            FileManager.default.createFile(atPath: filePath, contents: data)
+        }
     }
 
     /// Flushes the given hour bucket into `samples` without resetting the counters.

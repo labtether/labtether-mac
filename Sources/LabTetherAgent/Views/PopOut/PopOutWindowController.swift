@@ -37,9 +37,8 @@ private struct PopOutRootView: View {
 /// The panel uses `NSPanel` with `.nonactivatingPanel` so it floats above other
 /// windows without stealing focus from the menu bar interaction.
 @MainActor
-final class PopOutWindowController: ObservableObject {
+final class PopOutWindowController: NSObject, ObservableObject, NSWindowDelegate {
     private var panel: NSPanel?
-    private var closeObserver: NSObjectProtocol?
 
     /// Published visibility flag. Use this to drive `animationsActive` in `PopOutView`.
     @Published var panelVisible = false
@@ -99,35 +98,33 @@ final class PopOutWindowController: ObservableObject {
         )
         panel.contentView = hostView
         panel.center()
-        panel.makeKeyAndOrderFront(nil)
-        self.panel = panel
-        panelVisible = true
+        present(panel)
+    }
 
-        closeObserver = NotificationCenter.default.addObserver(
-            forName: NSWindow.willCloseNotification,
-            object: panel,
-            queue: .main
-        ) { _ in
-            Task { @MainActor [weak self] in
-                if let closeObserver = self?.closeObserver {
-                    NotificationCenter.default.removeObserver(closeObserver)
-                    self?.closeObserver = nil
-                }
-                self?.panel = nil
-                self?.panelVisible = false
-            }
-        }
+    /// Owns a prepared dashboard panel and its close events.
+    func present(_ panel: NSPanel) {
+        precondition(self.panel == nil, "Close the current dashboard before replacing it")
+        panel.delegate = self
+        self.panel = panel
+        panel.makeKeyAndOrderFront(nil)
+        panelVisible = true
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let closingPanel = notification.object as? NSPanel,
+              closingPanel === panel else { return }
+        closingPanel.delegate = nil
+        panel = nil
+        panelVisible = false
     }
 
     /// Closes and releases the panel.
     func close() {
-        panel?.close()
-        if let closeObserver {
-            NotificationCenter.default.removeObserver(closeObserver)
-            self.closeObserver = nil
-        }
+        let closingPanel = panel
+        closingPanel?.delegate = nil
         panel = nil
         panelVisible = false
+        closingPanel?.close()
     }
 
     /// Whether the panel is currently visible on screen.

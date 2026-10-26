@@ -95,7 +95,7 @@ final class OnboardingState: ObservableObject {
     /// Writes the wizard draft into `settings` and marks onboarding complete.
     ///
     /// This must be called on the main actor because `AgentSettings` publishes
-    /// via `@AppStorage` / `@Published` properties.
+    /// via the settings owner’s published properties.
     func applyToSettings(_ settings: AgentSettings) {
         settings.hubURL = hubURL.trimmingCharacters(in: .whitespacesAndNewlines)
 
