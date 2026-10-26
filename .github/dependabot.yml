@@ -1,6 +1,7 @@
 version: 2
 updates:
   - package-ecosystem: swift
+    open-pull-requests-limit: 0
     directory: /
     schedule:
       interval: weekly
@@ -8,6 +9,7 @@ updates:
       default-days: 7
 
   - package-ecosystem: github-actions
+    open-pull-requests-limit: 0
     directory: /
     schedule:
       interval: weekly
