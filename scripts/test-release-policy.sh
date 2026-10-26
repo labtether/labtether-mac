@@ -131,6 +131,35 @@ if validate_github_release_asset_readback "$(jq '.assets += [{name: "extra", sta
   fail "GitHub readback fixture accepted an unexpected extra asset"
 fi
 
+# GitHub's releases/tags endpoint omits drafts, so publication must look the
+# release up from the full paginated list and accept exactly one match.
+if grep -Fq 'releases/tags/' "${LOCAL_PUBLISH}"; then
+  fail "local publication must not read releases through the published-only tags endpoint"
+fi
+gh() {
+  [[ "$*" == "api --paginate --slurp repos/labtether/labtether-mac/releases?per_page=100" ]] || return 97
+  printf '%s\n' "${GH_RELEASE_PAGES}"
+}
+other_json="$(jq '.tag_name = "v1.2.2" | .draft = false' <<<"${release_json}")"
+GH_RELEASE_PAGES="$(jq -cn --argjson other "${other_json}" --argjson draft "${release_json}" '[[$other], [$other, $draft]]')"
+found_json="$(github_release_by_tag labtether/labtether-mac "${TAG}")" \
+  || fail "release lookup missed a draft on a later page"
+validate_github_release_asset_readback "${found_json}" true "${archive_hash}" "${checksum_hash}" 1000 94 \
+  || fail "release lookup did not return the draft release object"
+GH_RELEASE_PAGES="$(jq -cn --argjson other "${other_json}" '[[$other], []]')"
+if github_release_by_tag labtether/labtether-mac "${TAG}" >/dev/null 2>&1; then
+  fail "release lookup accepted a tag without a release"
+fi
+GH_RELEASE_PAGES="$(jq -cn --argjson draft "${release_json}" --argjson published "${published_json}" '[[$draft], [$published]]')"
+if github_release_by_tag labtether/labtether-mac "${TAG}" >/dev/null 2>&1; then
+  fail "release lookup accepted more than one release for a tag"
+fi
+GH_RELEASE_PAGES='{"message":"Not Found"}'
+if github_release_by_tag labtether/labtether-mac "${TAG}" >/dev/null 2>&1; then
+  fail "release lookup accepted an unexpected GitHub response"
+fi
+unset -f gh
+
 bash "${SCRIPT_DIR}/test-release-source-policy.sh"
 
 printf 'Release isolation policy passed.\n'
