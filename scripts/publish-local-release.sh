@@ -222,7 +222,7 @@ if [[ "${RELEASE_ACTION}" == "draft" ]]; then
     >/dev/null 2>&1; then
     fail "creating the two-asset draft release failed"
   fi
-  draft_json="$(gh api "repos/${REPOSITORY}/releases/tags/${TAG}")" \
+  draft_json="$(github_release_by_tag "${REPOSITORY}" "${TAG}")" \
     || fail "the draft release could not be inspected"
   validate_github_release_asset_readback \
     "${draft_json}" true "${ARCHIVE_HASH}" "${CHECKSUM_HASH}" "${ARCHIVE_SIZE}" "${CHECKSUM_SIZE}" \
@@ -232,7 +232,7 @@ if [[ "${RELEASE_ACTION}" == "draft" ]]; then
   exit 0
 fi
 
-draft_json="$(gh api "repos/${REPOSITORY}/releases/tags/${TAG}")" \
+draft_json="$(github_release_by_tag "${REPOSITORY}" "${TAG}")" \
   || fail "an existing draft release is required before publication"
 validate_github_release_asset_readback \
   "${draft_json}" true "${ARCHIVE_HASH}" "${CHECKSUM_HASH}" "${ARCHIVE_SIZE}" "${CHECKSUM_SIZE}" \
@@ -240,7 +240,7 @@ validate_github_release_asset_readback \
 if ! gh release edit "${TAG}" --repo "${REPOSITORY}" --draft=false >/dev/null 2>&1; then
   fail "the verified draft could not be published"
 fi
-published_json="$(gh api "repos/${REPOSITORY}/releases/tags/${TAG}")" \
+published_json="$(github_release_by_tag "${REPOSITORY}" "${TAG}")" \
   || fail "the published release could not be inspected"
 validate_github_release_asset_readback \
   "${published_json}" false "${ARCHIVE_HASH}" "${CHECKSUM_HASH}" "${ARCHIVE_SIZE}" "${CHECKSUM_SIZE}" \
