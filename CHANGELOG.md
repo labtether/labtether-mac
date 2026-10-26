@@ -22,6 +22,7 @@ Changes since the last public release, v1.4.0.
 ### Changed
 - The bundled agent core now updates only together with the signed app; it no
   longer replaces itself.
+- The bundled agent core is built with Go 1.27.3.
 - The Hub is told which remote desktop features this Mac supports.
 - Custom CA trust and the enrollment group now match what the Hub expects.
 - Numeric settings such as ports and intervals are checked before they are used.
