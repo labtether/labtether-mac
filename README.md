@@ -42,6 +42,7 @@ For detailed setup, see the [macOS agent setup guide](https://labtether.com/docs
 - **Menu bar status** -- Connection state, alerts, and quick actions at a glance.
 - **Service management** -- Monitor and manage launchd services from the dashboard.
 - **Notifications** -- Native macOS alerts for agent connection state and high/critical hub alert transitions.
+- **Update notice** -- The menu shows when a newer signed release is published. The app checks once a day, never downloads anything itself, and the check can be turned off in Settings > Advanced.
 
 ---
 
@@ -110,8 +111,12 @@ The app bundles the same Go agent core used by the Linux agent, wrapped in a nat
 - **Linux Agent** -- [github.com/labtether/labtether-agent](https://github.com/labtether/labtether-agent)
 - **Windows Agent** -- [github.com/labtether/labtether-win](https://github.com/labtether/labtether-win)
 - **Documentation** -- [labtether.com/docs](https://labtether.com/docs)
+- **Community** -- [GitHub Discussions](https://github.com/labtether/labtether/discussions)
+- **Security** -- report vulnerabilities privately, see [SECURITY.md](SECURITY.md)
 - **Website** -- [labtether.com](https://labtether.com)
 
 ## License
 
-Copyright 2026 LabTether. All rights reserved. See [LICENSE](LICENSE).
+Source-available, all rights reserved. Copyright 2026 LabTether. You may view
+and study this code, but you may not copy, modify, distribute or use it without
+written permission. See [LICENSE](LICENSE).
