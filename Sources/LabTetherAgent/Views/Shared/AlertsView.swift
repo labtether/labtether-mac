@@ -129,10 +129,15 @@ struct AlertsView: View {
 
 // MARK: - CritBadge
 
-/// A pulsing critical severity badge with breathing glow shadow.
+/// A critical severity badge with one attention pulse; the red badge stays visible.
 private struct CritBadge: View {
     @State private var pulse = false
     @Environment(\.animationsActive) private var animationsActive
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var allowsDecorativeMotion: Bool {
+        animationsActive && !reduceMotion && !ProcessInfo.processInfo.isLowPowerModeEnabled
+    }
 
     var body: some View {
         Text("CRIT")
@@ -143,8 +148,8 @@ private struct CritBadge: View {
             .background(LT.bad, in: Capsule())
             .shadow(color: LT.bad.opacity(pulse ? 0.7 : 0.3), radius: pulse ? 8 : 4)
             .onAppear {
-                guard animationsActive else { return }
-                withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+                guard allowsDecorativeMotion else { return }
+                withAnimation(.easeInOut(duration: 1.2).repeatCount(1, autoreverses: true)) {
                     pulse = true
                 }
             }
@@ -164,6 +169,11 @@ private struct AlertRowContent: View {
 
     @State private var pulse = false
     @Environment(\.animationsActive) private var animationsActive
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var allowsDecorativeMotion: Bool {
+        animationsActive && !reduceMotion && !ProcessInfo.processInfo.isLowPowerModeEnabled
+    }
 
     private var isCritical: Bool { alert.severity == "critical" }
 
@@ -212,9 +222,9 @@ private struct AlertRowContent: View {
         )
         .contentShape(Rectangle())
         .onAppear {
-            if isCritical && animationsActive {
+            if isCritical && allowsDecorativeMotion {
                 withAnimation(
-                    .easeInOut(duration: 1.5).repeatForever(autoreverses: true)
+                    .easeInOut(duration: 1.5).repeatCount(1, autoreverses: true)
                 ) {
                     pulse = true
                 }

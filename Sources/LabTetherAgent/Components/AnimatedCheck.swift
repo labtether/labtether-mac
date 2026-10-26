@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// A checkmark that draws itself in with a stroke animation for "all clear" states.
+/// A checkmark that draws itself in with a brief glow for "all clear" states.
 struct LTAnimatedCheck: View {
     let color: Color
     var size: CGFloat = 32
@@ -8,6 +8,11 @@ struct LTAnimatedCheck: View {
     @State private var drawn = false
     @State private var glowPulse = false
     @Environment(\.animationsActive) private var animationsActive
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var allowsDecorativeMotion: Bool {
+        animationsActive && !reduceMotion && !ProcessInfo.processInfo.isLowPowerModeEnabled
+    }
 
     var body: some View {
         ZStack {
@@ -16,7 +21,7 @@ struct LTAnimatedCheck: View {
                 .fill(color.opacity(glowPulse ? 0.12 : 0.06))
                 .frame(width: size * 1.4, height: size * 1.4)
                 .animation(
-                    .easeInOut(duration: LT.breatheDuration).repeatForever(autoreverses: true),
+                    allowsDecorativeMotion ? .easeInOut(duration: LT.breatheDuration).repeatCount(1, autoreverses: true) : nil,
                     value: glowPulse
                 )
 
@@ -30,12 +35,12 @@ struct LTAnimatedCheck: View {
                 .shadow(color: color.opacity(0.25), radius: 12)
         }
         .onAppear {
-            withAnimation(LT.springBouncy.delay(0.1)) {
+            withAnimation(allowsDecorativeMotion ? LT.springBouncy.delay(0.1) : nil) {
                 drawn = true
             }
-            if animationsActive { glowPulse = true }
+            if allowsDecorativeMotion { glowPulse = true }
         }
-        .onChange(of: animationsActive) { active in glowPulse = active }
+        .onChange(of: animationsActive) { _ in glowPulse = allowsDecorativeMotion }
         .accessibilityLabel("Success")
         .accessibilityAddTraits(.isImage)
     }

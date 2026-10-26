@@ -28,6 +28,7 @@ struct LogLine: Identifiable {
     let timestamp: String
     let timestampDate: Date?
     let level: LogLevel
+    let isRoutine: Bool
     let source: String?
     let message: String
     let searchableText: String
@@ -36,8 +37,10 @@ struct LogLine: Identifiable {
         self.id = id
         self.raw = raw
         self.timestamp = LogLine.parseTimestamp(raw)
-        self.timestampDate = LogLine.parseTimestampDate(raw)
-        self.level = LogLine.parseLevel(raw)
+        self.timestampDate = LogLine.timestampDates.date(from: timestamp)
+        let lowercase = SearchText(raw.lowercased())
+        self.level = LogLine.parseLevel(lowercase)
+        self.isRoutine = LogLine.parseRoutine(lowercase)
 
         let normalized = LogLine.normalizedDisplayContent(from: raw)
         let withoutTimestamp = LogLine.stripTimestampPrefix(normalized)
@@ -49,6 +52,7 @@ struct LogLine: Identifiable {
     }
 
     private static func parseTimestamp(_ line: String) -> String {
+        guard line.utf8.contains(0x3A) else { return "" }
         if let tRange = line.range(of: #"\d{4}-\d{2}-\d{2}T(\d{2}:\d{2}:\d{2})"#, options: .regularExpression) {
             let match = line[tRange]
             if let tIdx = match.firstIndex(of: "T") {
@@ -74,21 +78,52 @@ struct LogLine: Identifiable {
         return ""
     }
 
-    private static let timestampFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "HH:mm:ss"
-        return f
-    }()
+    private static let timestampDates = TimestampDateCache()
 
-    private static func parseTimestampDate(_ line: String) -> Date? {
-        let ts = parseTimestamp(line)
-        guard ts.count == 8 else { return nil }
-        return timestampFormatter.date(from: ts)
+    /// A log burst commonly shares one second. Keep just that last conversion
+    /// instead of asking the calendar parser to repeat it for every line.
+    private final class TimestampDateCache {
+        private let lock = NSLock()
+        private let formatter: DateFormatter = {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "HH:mm:ss"
+            return formatter
+        }()
+        private var previousTimestamp: String?
+        private var previousDate: Date?
+
+        func date(from timestamp: String) -> Date? {
+            guard timestamp.count == 8 else { return nil }
+            lock.lock()
+            defer { lock.unlock() }
+            if previousTimestamp != timestamp {
+                previousDate = formatter.date(from: timestamp)
+                previousTimestamp = timestamp
+            }
+            return previousDate
+        }
     }
 
-    private static func parseLevel(_ line: String) -> LogLevel {
-        let lower = line.lowercased()
+    /// ASCII log tokens need only literal matching. Keep Swift's Unicode
+    /// matching for all other text, including its canonical-equivalence rules.
+    private struct SearchText {
+        let text: String
+        let ascii: NSString?
 
+        init(_ text: String) {
+            self.text = text
+            self.ascii = text.utf8.allSatisfy { $0 < 0x80 } ? text as NSString : nil
+        }
+
+        func contains(_ token: String) -> Bool {
+            if let ascii {
+                return ascii.range(of: token, options: .literal).location != NSNotFound
+            }
+            return text.contains(token)
+        }
+    }
+
+    private static func parseLevel(_ lower: SearchText) -> LogLevel {
         if lower.contains("error") || lower.contains("fatal") || lower.contains("failed") ||
             lower.contains("panic") || lower.contains("crash") {
             return .error
@@ -103,6 +138,11 @@ struct LogLine: Identifiable {
     }
 
     private static func normalizedDisplayContent(from raw: String) -> String {
+        // Normal child logs are printable ASCII. Keep their text directly;
+        // Unicode, controls, tabs and ANSI escapes use the full sanitizer below.
+        if raw.utf8.allSatisfy({ $0 >= 0x20 && $0 < 0x7F }) {
+            return raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
         let withoutANSI = raw.replacingOccurrences(
             of: "\u{001B}\\[[0-9;?]*[ -/]*[@-~]",
             with: "",
@@ -121,6 +161,7 @@ struct LogLine: Identifiable {
     }
 
     static func stripTimestampPrefix(_ line: String) -> String {
+        guard line.utf8.contains(0x3A) else { return line.trimmingCharacters(in: .whitespaces) }
         let isoPattern = #"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?\s*"#
         if let range = line.range(of: isoPattern, options: .regularExpression) {
             return String(line[range.upperBound...]).trimmingCharacters(in: .whitespaces)
@@ -170,8 +211,7 @@ struct LogLine: Identifiable {
         source.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
     }
 
-    var isRoutine: Bool {
-        let lower = raw.lowercased()
+    private static func parseRoutine(_ lower: SearchText) -> Bool {
         return lower.contains("heartbeat") ||
             lower.contains("ping") ||
             lower.contains("pong") ||
@@ -202,6 +242,8 @@ struct LogBufferSummary: Equatable {
 
 @MainActor
 final class LogBuffer: ObservableObject {
+    // The row limit alone cannot bound memory when child logs contain huge lines.
+    static let maximumRetainedRawBytes = 4 * 1024 * 1024
     @Published private(set) var logLines: [LogLine] = []
     @Published private(set) var recentEventLines: [LogLine] = []
     @Published private(set) var summary = LogBufferSummary()
@@ -210,6 +252,7 @@ final class LogBuffer: ObservableObject {
     private var storage: [LogLine?]
     private var headIndex = 0
     private var count = 0
+    private var retainedRawBytes = 0
 
     init() {
         storage = Array(repeating: nil, count: maxLines)
@@ -238,6 +281,7 @@ final class LogBuffer: ObservableObject {
         storage = Array(repeating: nil, count: maxLines)
         headIndex = 0
         count = 0
+        retainedRawBytes = 0
         logLines = []
         recentEventLines = []
         summary = LogBufferSummary()
@@ -252,13 +296,25 @@ final class LogBuffer: ObservableObject {
     }
 
     private func appendToStorage(_ logLine: LogLine) {
-        if count < maxLines {
-            storage[(headIndex + count) % maxLines] = logLine
-            count += 1
-        } else {
-            storage[headIndex] = logLine
-            headIndex = (headIndex + 1) % maxLines
+        let byteCount = logLine.raw.utf8.count
+        while count > 0 && (count == maxLines || retainedRawBytes + byteCount > Self.maximumRetainedRawBytes) {
+            removeOldest()
         }
+        // Pipe input is already split into 64 KiB fragments. Also enforce the
+        // retention bound for direct wrapper messages, without clipping text.
+        guard byteCount <= Self.maximumRetainedRawBytes else { return }
+        storage[(headIndex + count) % maxLines] = logLine
+        count += 1
+        retainedRawBytes += byteCount
+    }
+
+    private func removeOldest() {
+        if let oldest = storage[headIndex] {
+            retainedRawBytes -= oldest.raw.utf8.count
+        }
+        storage[headIndex] = nil
+        headIndex = (headIndex + 1) % maxLines
+        count -= 1
     }
 
     private func rebuildPublishedState() {

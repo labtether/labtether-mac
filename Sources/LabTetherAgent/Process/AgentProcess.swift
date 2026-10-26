@@ -340,16 +340,21 @@ final class AgentProcess: ObservableObject {
             guard !data.isEmpty else {
                 let trailing = decoder.finish()
                 if !trailing.isEmpty {
-                    handler(trailing.map { ParsedLogLine(raw: $0, event: parser.parse($0)) })
+                    handler(trailing.map { ParsedLogLine(raw: $0.text, event: Self.logEvent(for: $0, parser: parser)) })
                 }
                 handle.readabilityHandler = nil
                 return
             }
             let lines = decoder.ingest(data)
             if !lines.isEmpty {
-                handler(lines.map { ParsedLogLine(raw: $0, event: parser.parse($0)) })
+                handler(lines.map { ParsedLogLine(raw: $0.text, event: Self.logEvent(for: $0, parser: parser)) })
             }
         }
+    }
+
+    /// Partial text must never impersonate a complete lifecycle/auth log event.
+    nonisolated static func logEvent(for line: LogPipeChunkDecoder.Line, parser: LogParser) -> AgentEvent {
+        line.isContinuation ? .unknown(line: line.text) : parser.parse(line.text)
     }
 
     private func orphanedAgentPIDs(matching binaryPath: String) -> [Int32] {
