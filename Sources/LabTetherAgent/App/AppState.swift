@@ -25,6 +25,7 @@ final class AppState: ObservableObject {
     let performanceAutomation: PerformanceAutomationController
     let sessionHistory: SessionHistoryTracker
     let bandwidthTracker: BandwidthTracker
+    let appUpdates: AppUpdateChecker
     private var bandwidthMetricsObserver: AnyCancellable?
 
     @Published var shouldShowOnboarding = false
@@ -63,6 +64,7 @@ final class AppState: ObservableObject {
         self.agentProcess = proc
         self.screenSharing = ScreenSharingMonitor(notifications: notifications)
         self.performanceAutomation = PerformanceAutomationController(logBuffer: logBuffer)
+        self.appUpdates = AppUpdateChecker(settings: settings)
         apiClient.notifications = notifications
         debugBoot("Settings snapshot autoStart=\(settings.autoStart) isConfigured=\(settings.isConfigured) hubURL=\(settings.hubURL) port=\(settings.agentPort)")
 
@@ -172,6 +174,8 @@ final class AppState: ObservableObject {
 
         // Start monitoring Screen Sharing status
         screenSharing.startMonitoring()
+        // Notify-only app update check (at most once a day, opt-out in Settings).
+        appUpdates.start()
         if settings.allowsSystemIntegration { installPerformanceControlObserver() }
         debugBoot("AppState init complete")
     }

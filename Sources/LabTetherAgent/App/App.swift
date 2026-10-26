@@ -23,6 +23,7 @@ struct LabTetherAgentApp: App {
                 screenSharing: appState.screenSharing,
                 logBuffer: appState.logBuffer,
                 apiClient: appState.apiClient,
+                appUpdates: appState.appUpdates,
                 onPopOut: { AppState.shared.popOutController.toggle(appState: AppState.shared) }
             )
             .environment(\.animationsActive, appState.apiClient.animationsActive)

@@ -7,6 +7,7 @@ struct MenuBarView: View {
     let screenSharing: ScreenSharingMonitor
     let logBuffer: LogBuffer
     let apiClient: LocalAPIClient
+    var appUpdates: AppUpdateChecker?
     /// Called when the user activates "Pop Out Window". Wired in App.swift to the shared controller.
     var onPopOut: () -> Void = {}
     @Environment(\.openWindow) private var openWindow
@@ -27,6 +28,10 @@ struct MenuBarView: View {
             MenuBarRestartBannerSection(agentProcess: agentProcess)
                 .padding(.horizontal, LT.space12)
                 .padding(.bottom, LT.space6)
+
+            if let appUpdates {
+                MenuBarAppUpdateSection(updates: appUpdates)
+            }
 
             LTSeparator()
                 .padding(.horizontal, LT.space12)

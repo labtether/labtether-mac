@@ -158,6 +158,10 @@ final class AgentSettings: ObservableObject {
     @Published var menuBarDisplayMode: String = "standard" {
         didSet { savePreference(menuBarDisplayMode, key: "menuBarDisplayMode") }
     }
+    /// Notify-only check for a newer signed app release. It never downloads.
+    @Published var checkForAppUpdates: Bool = true {
+        didSet { savePreference(checkForAppUpdates, key: "checkForAppUpdates") }
+    }
 
     /// Incremented when settings are saved to signal a restart is needed.
     @Published var settingsVersion: Int = 0
@@ -236,6 +240,17 @@ final class AgentSettings: ObservableObject {
         hasCompletedOnboarding = preferences.bool("hasCompletedOnboarding", default: false)
         autoStart = preferences.bool("autoStart", default: true)
         menuBarDisplayMode = preferences.string("menuBarDisplayMode", default: "standard")
+        checkForAppUpdates = preferences.bool("checkForAppUpdates", default: true)
+    }
+
+    /// Update-check bookkeeping. Values stay strings because isolated JSON
+    /// preferences accept only strings and booleans.
+    func appUpdateRecord(_ key: String) -> String {
+        preferences.string(key, default: "")
+    }
+
+    func setAppUpdateRecord(_ value: String, key: String) {
+        savePreference(value, key: key)
     }
 
     /// Whether the minimum required config is present to start the agent.
