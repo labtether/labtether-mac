@@ -8,56 +8,7 @@ struct SettingsAdvancedTab: View {
 
     var body: some View {
         LazyVStack(spacing: LT.space12) {
-            SettingsCardSection("STARTUP") {
-                SettingsToggleRow(icon: "person.badge.clock.fill", label: "Start at Login",
-                                  isOn: Binding(
-                                      get: { settings.startAtLogin },
-                                      set: { newValue in
-                                          if LoginItemManager.setEnabled(newValue) {
-                                              settings.startAtLogin = newValue
-                                          } else {
-                                              settings.startAtLogin = LoginItemManager.isEnabled
-                                              status.markError(
-                                                  newValue
-                                                      ? "Start at Login was not enabled. Approve LabTether in System Settings > General > Login Items, then try again."
-                                                      : "Start at Login could not be disabled. Check System Settings > General > Login Items."
-                                              )
-                                          }
-                                      }
-                                  ))
-
-                SettingsToggleRow(icon: "play.circle.fill", label: "Auto-Start Agent on Launch",
-                                  isOn: $settings.autoStart)
-
-                HStack(spacing: LT.space8) {
-                    Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(LT.accent)
-                        .frame(width: 16)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(ManagedAppUpdatePolicy.title)
-                            .font(LT.inter(12, weight: .medium))
-                            .foregroundStyle(LT.textPrimary)
-                        Text(ManagedAppUpdatePolicy.detail)
-                            .font(LT.inter(10))
-                            .foregroundStyle(LT.textSecondary)
-                    }
-                    Spacer()
-                    Text(ManagedAppUpdatePolicy.badge)
-                        .font(LT.inter(9, weight: .semibold))
-                        .foregroundStyle(LT.accent)
-                        .padding(.horizontal, LT.space8)
-                        .padding(.vertical, 4)
-                        .background(LT.accent.opacity(0.12), in: Capsule())
-                }
-                .padding(.horizontal, LT.space12)
-                .padding(.vertical, LT.space4)
-                .background(LT.panelGlass, in: RoundedRectangle(cornerRadius: LT.radiusSm, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: LT.radiusSm, style: .continuous)
-                        .strokeBorder(LT.panelBorder, lineWidth: 1)
-                )
-            }
+            SettingsStartupSection(settings: settings, status: status)
 
             SettingsCardSection("DOCKER INTEGRATION") {
                 HStack(spacing: LT.space8) {

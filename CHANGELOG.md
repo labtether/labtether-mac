@@ -3,7 +3,47 @@
 All notable changes to the LabTether Mac Agent will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project uses [CalVer](https://calver.org/) versioning: `YYYY.N`.
+and this project uses [Semantic Versioning](https://semver.org/). The older
+`2026.1` entry predates the switch from calendar versions.
+
+## [1.7.0] - unreleased
+
+Changes since the last public release, v1.4.0.
+
+### Added
+- An "Update available" item appears in the menu when a newer signed release
+  is published. The app asks GitHub at most once a day, opens the release page
+  when clicked, and never downloads anything itself. Turn it off with
+  Settings > Advanced > Check for App Updates Daily.
+- Hub URLs on a loopback address work, so a local tunnel to the Hub can be used.
+- Launching with `--state-directory PATH` keeps that copy's settings and
+  secrets apart from the installed app.
+
+### Changed
+- The bundled agent core now updates only together with the signed app; it no
+  longer replaces itself.
+- The Hub is told which remote desktop features this Mac supports.
+- Custom CA trust and the enrollment group now match what the Hub expects.
+- Numeric settings such as ports and intervals are checked before they are used.
+- Agent logs use bounded memory. Very long log lines are split instead of
+  growing without limit.
+- Decorative pulses and glows play once, and stay off with Reduce Motion or
+  Low Power Mode.
+
+### Fixed
+- The Screen Sharing "Fix" button now shows an error when macOS could not grant
+  control access, instead of failing silently.
+- The Documentation link in About opens https://labtether.com/docs.
+- A stopped or replaced agent can no longer change the status shown in the menu.
+- A settings save that fails is now reported instead of ignored.
+- The connection test accepts the same Hub URLs and CA files as the agent.
+- The menu window no longer collapses, and a stale "starting" state no longer
+  sticks.
+- The Screen Sharing grant command and console links are escaped safely.
+
+### Security
+- Releases are signed and notarized on the maintainer's machine. Hosted CI only
+  checks the tagged sources and never holds signing credentials.
 
 ## [2026.1] - Unreleased
 
@@ -44,4 +84,5 @@ and this project uses [CalVer](https://calver.org/) versioning: `YYYY.N`.
 - Gated all repeatForever animations on popover visibility to eliminate idle CPU usage
 - @Sendable annotation and unused result warning in ConnectionTester
 
+[1.7.0]: https://github.com/labtether/labtether-mac/releases/tag/v1.7.0
 [2026.1]: https://github.com/labtether/labtether-mac/releases/tag/v2026.1

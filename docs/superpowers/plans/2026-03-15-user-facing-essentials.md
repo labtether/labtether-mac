@@ -1378,7 +1378,7 @@ struct AboutView: View {
                         .font(LT.inter(12))
                         .foregroundColor(LT.accent)
                 }
-                if let url = URL(string: "https://docs.labtether.com") {
+                if let url = URL(string: "https://labtether.com/docs") {
                     Link("Documentation", destination: url)
                         .font(LT.inter(12))
                         .foregroundColor(LT.accent)

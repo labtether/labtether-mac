@@ -69,3 +69,6 @@ labtether-agent-macos-universal.tar.gz.sha256
 # Python helper cache
 __pycache__/
 *.py[cod]
+
+# Task scratch files (see AGENTS.md)
+work/

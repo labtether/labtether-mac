@@ -34,6 +34,7 @@ struct MenuBarFooterSection: View {
             .buttonStyle(.plain)
             .font(LT.inter(11))
             .foregroundColor(LT.bad)
+            .disabled(!settings.allowsSystemIntegration)
 
             Spacer()
         }

@@ -81,6 +81,7 @@ enum AgentSettingsValidator {
             errors.append("CA certificate file not found: \(trimmedCAFile)")
         }
 
+        if let issue = settings.preferencePersistenceError { errors.append(issue) }
         errors.append(contentsOf: settings.secretPersistenceErrors)
         return errors
     }

@@ -7,6 +7,7 @@ enum UninstallManager {
         agentProcess: AgentProcess,
         settings: AgentSettings
     ) {
+        guard settings.allowsSystemIntegration else { return }
         // Capture path before cleanup (accessing appSupportDirectory creates it as side effect)
         let appSupportURL = settings.appSupportDirectory
         // 1. Stop agent

@@ -2,7 +2,7 @@ import SwiftUI
 
 // MARK: - LTEmptyState
 
-/// A branded empty state with breathing glow icon, matching the iOS LTEmptyState pattern.
+/// A branded empty state with a brief entrance glow, matching the iOS LTEmptyState pattern.
 struct LTEmptyState: View {
     let icon: String
     let title: String
@@ -11,6 +11,11 @@ struct LTEmptyState: View {
 
     @State private var breathe = false
     @Environment(\.animationsActive) private var animationsActive
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var allowsDecorativeMotion: Bool {
+        animationsActive && !reduceMotion && !ProcessInfo.processInfo.isLowPowerModeEnabled
+    }
 
     var body: some View {
         VStack(spacing: LT.space16) {
@@ -24,7 +29,7 @@ struct LTEmptyState: View {
                     .foregroundStyle(color.opacity(breathe ? 0.6 : 0.4))
             }
             .animation(
-                .easeInOut(duration: LT.breatheDuration).repeatForever(autoreverses: true),
+                allowsDecorativeMotion ? .easeInOut(duration: LT.breatheDuration).repeatCount(1, autoreverses: true) : nil,
                 value: breathe
             )
 
@@ -41,8 +46,8 @@ struct LTEmptyState: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, LT.space24)
-        .onAppear { if animationsActive { breathe = true } }
-        .onChange(of: animationsActive) { active in breathe = active }
+        .onAppear { if allowsDecorativeMotion { breathe = true } }
+        .onChange(of: animationsActive) { _ in breathe = allowsDecorativeMotion }
     }
 }
 

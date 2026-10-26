@@ -14,9 +14,9 @@ private func debugBoot(_ message: @autoclosure () -> String) {
 @MainActor
 final class AppState: ObservableObject {
     static let shared = AppState()
-    let settings = AgentSettings.shared
+    let settings: AgentSettings
     let status = AgentStatus()
-    let notifications = NotificationManager()
+    let notifications: NotificationManager
     let logBuffer = LogBuffer()
     let agentProcess: AgentProcess
     let screenSharing: ScreenSharingMonitor
@@ -25,6 +25,7 @@ final class AppState: ObservableObject {
     let performanceAutomation: PerformanceAutomationController
     let sessionHistory: SessionHistoryTracker
     let bandwidthTracker: BandwidthTracker
+    let appUpdates: AppUpdateChecker
     private var bandwidthMetricsObserver: AnyCancellable?
 
     @Published var shouldShowOnboarding = false
@@ -42,12 +43,16 @@ final class AppState: ObservableObject {
     private lazy var lastMenuBarLabelPresentation = menuBarLabelPresentation
 
     init() {
+        settings = AgentSettings.shared
+        notifications = NotificationManager(allowSystemIntegration: settings.allowsSystemIntegration)
         debugBoot("AppState init begin")
         sessionHistory = SessionHistoryTracker(
-            filePath: settings.appSupportDirectory.appendingPathComponent("session-history.json").path
+            filePath: settings.appSupportDirectory.appendingPathComponent("session-history.json").path,
+            stateLocation: settings.stateLocation?.isolated == true ? settings.stateLocation : nil
         )
         bandwidthTracker = BandwidthTracker(
-            filePath: settings.appSupportDirectory.appendingPathComponent("bandwidth-history.json").path
+            filePath: settings.appSupportDirectory.appendingPathComponent("bandwidth-history.json").path,
+            stateLocation: settings.stateLocation?.isolated == true ? settings.stateLocation : nil
         )
         let proc = AgentProcess(
             status: status,
@@ -59,6 +64,7 @@ final class AppState: ObservableObject {
         self.agentProcess = proc
         self.screenSharing = ScreenSharingMonitor(notifications: notifications)
         self.performanceAutomation = PerformanceAutomationController(logBuffer: logBuffer)
+        self.appUpdates = AppUpdateChecker(settings: settings)
         apiClient.notifications = notifications
         debugBoot("Settings snapshot autoStart=\(settings.autoStart) isConfigured=\(settings.isConfigured) hubURL=\(settings.hubURL) port=\(settings.agentPort)")
 
@@ -157,7 +163,7 @@ final class AppState: ObservableObject {
         }
 
         // Sync login item state
-        if LoginItemManager.isEnabled != settings.startAtLogin {
+        if settings.allowsSystemIntegration && LoginItemManager.isEnabled != settings.startAtLogin {
             let requestedState = settings.startAtLogin
             if !LoginItemManager.setEnabled(requestedState) {
                 // Do not leave UserDefaults claiming a login item state that
@@ -168,7 +174,9 @@ final class AppState: ObservableObject {
 
         // Start monitoring Screen Sharing status
         screenSharing.startMonitoring()
-        installPerformanceControlObserver()
+        // Notify-only app update check (at most once a day, opt-out in Settings).
+        appUpdates.start()
+        if settings.allowsSystemIntegration { installPerformanceControlObserver() }
         debugBoot("AppState init complete")
     }
 

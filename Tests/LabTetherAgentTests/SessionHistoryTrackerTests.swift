@@ -7,10 +7,14 @@ final class SessionHistoryTrackerTests: XCTestCase {
     // MARK: - Helpers
 
     private func makeTempPath() -> String {
-        FileManager.default.temporaryDirectory
+        let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
-            .appendingPathExtension("json")
-            .path
+        addTeardownBlock {
+            if FileManager.default.fileExists(atPath: directory.path) {
+                try FileManager.default.removeItem(at: directory)
+            }
+        }
+        return directory.appendingPathComponent("session-history.json").path
     }
 
     private func makeTracker(
@@ -122,6 +126,21 @@ final class SessionHistoryTrackerTests: XCTestCase {
 
     // MARK: - 6. testSaveAndLoadRoundTrip
 
+    func testContinuousEventsStayWithinRetentionBeforeAnySave() {
+        let tracker = makeTracker(maxRecords: 3)
+        defer { tracker.clearHistory() }
+        let now = Date()
+
+        tracker.handleEvent(.terminalSession(detail: "expired"), timestamp: now.addingTimeInterval(-31 * 24 * 60 * 60))
+        XCTAssertTrue(tracker.records.isEmpty)
+        for index in 0..<100 {
+            tracker.handleEvent(.fileTransfer(detail: "record-\(index)"), timestamp: now)
+            XCTAssertLessThanOrEqual(tracker.records.count, 3)
+        }
+
+        XCTAssertEqual(tracker.records.map(\.detail), ["record-97", "record-98", "record-99"])
+    }
+
     func testSaveAndLoadRoundTrip() {
         let path = makeTempPath()
         let tracker = SessionHistoryTracker(filePath: path, maxRecords: 500, maxAgeDays: 30)
@@ -148,6 +167,13 @@ final class SessionHistoryTrackerTests: XCTestCase {
         let originalIDs = Set(tracker.records.map(\.id))
         let loadedIDs = Set(loaded.records.map(\.id))
         XCTAssertEqual(originalIDs, loadedIDs, "UUIDs must survive JSON round-trip")
+
+        tracker.handleEvent(.fileTransfer(detail: "later transfer"), timestamp: now)
+        tracker.save()
+        let replaced = SessionHistoryTracker(filePath: path)
+        XCTAssertEqual(replaced.records.map(\.detail), ["ssh session", "desktop session", "later transfer"])
+        let parent = URL(fileURLWithPath: path).deletingLastPathComponent()
+        XCTAssertEqual(try? FileManager.default.contentsOfDirectory(atPath: parent.path), ["session-history.json"])
     }
 
     // MARK: - 7. testClearHistoryRemovesAllRecords

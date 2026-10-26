@@ -5,6 +5,11 @@ struct LogBufferView: View {
     @ObservedObject var logBuffer: LogBuffer
     @ObservedObject var status: AgentStatus
     @Environment(\.animationsActive) private var animationsActive
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var allowsDecorativeMotion: Bool {
+        animationsActive && !reduceMotion && !ProcessInfo.processInfo.isLowPowerModeEnabled
+    }
 
     @State private var autoScroll = true
     @State private var searchText = ""
@@ -273,7 +278,7 @@ struct LogBufferView: View {
                     .fill(LT.textMuted.opacity(emptyGlow ? 0.08 : 0.03))
                     .frame(width: 84, height: 84)
                     .animation(
-                        animationsActive ? .easeInOut(duration: LT.breatheDuration).repeatForever(autoreverses: true) : .default,
+                        allowsDecorativeMotion ? .easeInOut(duration: LT.breatheDuration).repeatCount(1, autoreverses: true) : nil,
                         value: emptyGlow
                     )
 
@@ -281,7 +286,7 @@ struct LogBufferView: View {
                     .font(.system(size: 30, weight: .thin))
                     .foregroundStyle(LT.textMuted.opacity(emptyGlow ? 0.65 : 0.4))
                     .animation(
-                        animationsActive ? .easeInOut(duration: LT.breatheDuration).repeatForever(autoreverses: true) : .default,
+                        allowsDecorativeMotion ? .easeInOut(duration: LT.breatheDuration).repeatCount(1, autoreverses: true) : nil,
                         value: emptyGlow
                     )
             }
@@ -297,8 +302,8 @@ struct LogBufferView: View {
             }
         }
         .frame(maxWidth: .infinity, minHeight: 220)
-        .onAppear { emptyGlow = animationsActive }
-        .onChange(of: animationsActive) { emptyGlow = $0 }
+        .onAppear { emptyGlow = allowsDecorativeMotion }
+        .onChange(of: animationsActive) { _ in emptyGlow = allowsDecorativeMotion }
     }
 
     // MARK: - Status Bar

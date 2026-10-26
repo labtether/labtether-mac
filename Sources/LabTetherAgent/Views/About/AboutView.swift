@@ -130,7 +130,7 @@ struct AboutView: View {
     private var linksRow: some View {
         HStack(spacing: LT.space16) {
             externalLink(L10n.aboutWebsite, url: "https://labtether.com")
-            externalLink(L10n.aboutDocumentation, url: "https://docs.labtether.com")
+            externalLink(L10n.aboutDocumentation, url: "https://labtether.com/docs")
             externalLink(L10n.aboutSupport, url: "https://labtether.com/support")
         }
     }

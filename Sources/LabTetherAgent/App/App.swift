@@ -23,6 +23,7 @@ struct LabTetherAgentApp: App {
                 screenSharing: appState.screenSharing,
                 logBuffer: appState.logBuffer,
                 apiClient: appState.apiClient,
+                appUpdates: appState.appUpdates,
                 onPopOut: { AppState.shared.popOutController.toggle(appState: AppState.shared) }
             )
             .environment(\.animationsActive, appState.apiClient.animationsActive)
@@ -99,38 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Register bundled premium fonts before any SwiftUI views render.
         FontLoader.registerAll()
 
-        // Prevent duplicate instances — quit if another is already running
-        let myPID = ProcessInfo.processInfo.processIdentifier
-        let bundleID = Bundle.main.bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-
-        // Check by bundle identifier (works for .app bundles)
-        if !bundleID.isEmpty {
-            let dupes = NSWorkspace.shared.runningApplications.filter {
-                $0.bundleIdentifier == bundleID && $0.processIdentifier != myPID
-            }
-            if !dupes.isEmpty {
-                NSApplication.shared.terminate(nil)
-                return
-            }
-        } else {
-            // Fallback for debug/CLI launches: check by process name.
-            let myName = ProcessInfo.processInfo.processName
-            let task = Process()
-            task.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
-            task.arguments = ["-x", myName]
-            let pipe = Pipe()
-            task.standardOutput = pipe
-            try? task.run()
-            task.waitUntilExit()
-            if let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) {
-                let pids = output.split(separator: "\n").compactMap { Int32($0.trimmingCharacters(in: .whitespaces)) }
-                let otherPids = pids.filter { $0 != myPID }
-                if !otherPids.isEmpty {
-                    NSApplication.shared.terminate(nil)
-                    return
-                }
-            }
-        }
+        // The state-directory lock was acquired before AppState construction.
 
         // Ensure shared app state is initialized at launch time so auto-start
         // behavior does not depend on menu/window scene materialization timing.

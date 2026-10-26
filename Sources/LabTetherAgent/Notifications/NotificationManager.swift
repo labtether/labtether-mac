@@ -54,10 +54,10 @@ final class NotificationManager {
     /// this and silently disable notifications instead.
     private let available: Bool
 
-    init() {
-        self.available = Bundle.main.bundleIdentifier != nil && !Bundle.main.bundleIdentifier!.isEmpty
-        if available {
-            requestAuthorization()
+    init(requestAuthorization: Bool = true, allowSystemIntegration: Bool = true) {
+        self.available = allowSystemIntegration && Bundle.main.bundleIdentifier != nil && !Bundle.main.bundleIdentifier!.isEmpty
+        if available && requestAuthorization {
+            self.requestAuthorization()
         }
     }
 

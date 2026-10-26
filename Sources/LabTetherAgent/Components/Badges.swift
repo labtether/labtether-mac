@@ -14,6 +14,11 @@ struct LTStatusDot: View {
 
     @State private var pulse = false
     @Environment(\.animationsActive) private var animationsActive
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var allowsDecorativeMotion: Bool {
+        animationsActive && !reduceMotion && !ProcessInfo.processInfo.isLowPowerModeEnabled
+    }
 
     /// Creates an `LTStatusDot`.
     /// - Parameters:
@@ -36,7 +41,7 @@ struct LTStatusDot: View {
                     .stroke(color.opacity(pulse ? 0 : 0.4), lineWidth: 1)
                     .frame(width: size * (pulse ? 2.5 : 1.0), height: size * (pulse ? 2.5 : 1.0))
                     .animation(
-                        .easeOut(duration: pulseSpeed).repeatForever(autoreverses: false),
+                        allowsDecorativeMotion ? .easeOut(duration: pulseSpeed).repeatCount(1, autoreverses: false) : nil,
                         value: pulse
                     )
             }
@@ -49,13 +54,13 @@ struct LTStatusDot: View {
                 .shadow(color: color.opacity(0.35), radius: 6)
         }
         .onAppear {
-            if pulsing && animationsActive { pulse = true }
+            if pulsing && allowsDecorativeMotion { pulse = true }
         }
         .onChange(of: pulsing) { active in
-            pulse = active && animationsActive
+            pulse = active && allowsDecorativeMotion
         }
         .onChange(of: animationsActive) { active in
-            pulse = active && pulsing
+            pulse = allowsDecorativeMotion && pulsing
         }
     }
 }

@@ -14,6 +14,11 @@ final class AgentProcess: ObservableObject {
     private var stdoutPipe: Pipe?
     private var stderrPipe: Pipe?
     private var pendingRestart = false
+    private(set) var crashRestartTask: Task<Void, Never>?
+    private let childOwnership: AgentChildOwnership?
+    private let makeProcess: () -> Process
+    private let agentBinaryPath: () -> String
+    private let waitForCrashRestart: @MainActor (TimeInterval) async -> Void
 
     let status: AgentStatus
     let settings: AgentSettings
@@ -40,13 +45,22 @@ final class AgentProcess: ObservableObject {
         settings: AgentSettings,
         notifications: NotificationManager,
         logBuffer: LogBuffer,
-        sessionHistory: SessionHistoryTracker
+        sessionHistory: SessionHistoryTracker,
+        makeProcess: @escaping () -> Process = { Process() },
+        agentBinaryPath: @escaping () -> String = { BundleHelper.agentBinaryPath },
+        waitForCrashRestart: @escaping @MainActor (TimeInterval) async -> Void = { delay in
+            try? await Task.sleep(for: .seconds(delay))
+        }
     ) {
         self.status = status
         self.settings = settings
         self.notifications = notifications
         self.logBuffer = logBuffer
         self.sessionHistory = sessionHistory
+        self.childOwnership = settings.stateLocation.map { AgentChildOwnership(location: $0) }
+        self.makeProcess = makeProcess
+        self.agentBinaryPath = agentBinaryPath
+        self.waitForCrashRestart = waitForCrashRestart
 
         // Observe settings changes to show "restart required" when running
         settingsObserver = settings.$settingsVersion
@@ -61,22 +75,10 @@ final class AgentProcess: ObservableObject {
             }
     }
 
-    /// Kill any orphaned agent processes from previous app runs.
-    ///
-    /// This only targets absolute executable paths to avoid broad pattern matches.
-    func killOrphanedAgents(matching binaryPath: String) {
-        let orphaned = orphanedAgentPIDs(matching: binaryPath)
-        guard !orphaned.isEmpty else { return }
-
-        for pid in orphaned {
-            _ = kill(pid, SIGKILL)
-        }
-
-        logBuffer.append("[app] Reaped \(orphaned.count) orphaned agent process(es)")
-    }
-
     /// Immediately kill the agent process (used during app quit).
     func forceKill() {
+        cancelCrashRestart()
+        crashCoordinator.cancelCooldown()
         userInitiatedStop = true
         pendingRestart = false
         guard let proc = process else {
@@ -86,6 +88,7 @@ final class AgentProcess: ObservableObject {
         if proc.isRunning {
             kill(proc.processIdentifier, SIGKILL)
         }
+        childOwnership?.retire(proc)
         process = nil
         isRunning = false
         isStarting = false
@@ -95,6 +98,7 @@ final class AgentProcess: ObservableObject {
     func start(resetCrashHistory: Bool = true) {
         debugBootProcess("start called resetCrashHistory=\(resetCrashHistory) process_nil=\(process == nil) isStarting=\(isStarting)")
         guard process == nil && !isStarting else { return }
+        cancelCrashRestart()
 
         if resetCrashHistory {
             crashCoordinator.reset()
@@ -118,7 +122,7 @@ final class AgentProcess: ObservableObject {
             return
         }
 
-        let binaryPath = BundleHelper.agentBinaryPath
+        let binaryPath = agentBinaryPath()
         debugBootProcess("binaryPath=\(binaryPath)")
         guard binaryPath.hasPrefix("/") && FileManager.default.isExecutableFile(atPath: binaryPath) else {
             debugBootProcess("start aborted: binary not executable")
@@ -133,10 +137,14 @@ final class AgentProcess: ObservableObject {
             hubURL: settings.normalizedHubWebSocketURL() ?? settings.hubURL
         )
 
-        // Clean up any orphaned agents from previous runs.
-        killOrphanedAgents(matching: binaryPath)
+        do { try childOwnership?.recover(binaryPath: binaryPath) }
+        catch {
+            isStarting = false
+            status.markError("Saved child ownership could not be verified; no unknown process was stopped.")
+            return
+        }
 
-        let proc = Process()
+        let proc = makeProcess()
         proc.executableURL = URL(fileURLWithPath: binaryPath)
         do {
             proc.environment = try settings.buildEnvironment()
@@ -158,43 +166,16 @@ final class AgentProcess: ObservableObject {
         // Handle process termination
         proc.terminationHandler = { [weak self] proc in
             Task { @MainActor [weak self] in
-                guard let self = self else { return }
-                let previousState = self.status.state
-                let wasUserStop = self.userInitiatedStop
-                let shouldRestart = self.pendingRestart
-                self.pendingRestart = false
-                self.process = nil
-                self.isRunning = false
-                self.isStarting = false
-                self.stdoutPipe = nil
-                self.stderrPipe = nil
-                self.settings.cleanupEphemeralSecrets()
-
-                if wasUserStop || shouldRestart || proc.terminationStatus == 0 {
-                    self.status.markStopped()
-                } else {
-                    self.status.markError("Exited with code \(proc.terminationStatus)")
-                }
-
-                if previousState == .connected && !wasUserStop && !shouldRestart {
-                    self.notifications.notify(.disconnected)
-                }
-
-                if shouldRestart {
-                    self.start()
-                    return
-                }
-
-                // Auto-restart on unexpected crash (non-zero exit, not user-initiated)
-                if proc.terminationStatus != 0 && !wasUserStop {
-                    self.attemptCrashRestart()
-                }
+                self?.handleTermination(of: proc)
             }
         }
 
         do {
             try proc.run()
+            self.process = proc
+            try childOwnership?.register(proc, binaryPath: binaryPath)
         } catch {
+            if proc.isRunning { kill(proc.processIdentifier, SIGKILL) }
             debugBootProcess("start failed to run process: \(error.localizedDescription)")
             isStarting = false
             settings.cleanupEphemeralSecrets()
@@ -212,31 +193,35 @@ final class AgentProcess: ObservableObject {
 
         // Read stdout in background — handler receives all lines from a single
         // availableData read, dispatched in one Task to reduce allocations.
-        readPipe(stdout) { [weak self] lines in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
+        readPipe(stdout) { [weak self, weak proc] lines in
+            Task { @MainActor [weak self, weak proc] in
+                guard let self, let proc, self.process === proc else { return }
                 self.handleParsedLines(lines)
             }
         }
         // Read stderr in background (Go logs to stderr by default)
-        readPipe(stderr) { [weak self] lines in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
+        readPipe(stderr) { [weak self, weak proc] lines in
+            Task { @MainActor [weak self, weak proc] in
+                guard let self, let proc, self.process === proc else { return }
                 self.handleParsedLines(lines)
             }
         }
     }
 
     func stop(forRestart: Bool = false) {
+        cancelCrashRestart()
         userInitiatedStop = true
         pendingRestart = forRestart
         crashCoordinator.cancelCooldown()
         isStarting = false
         guard let proc = process, proc.isRunning else {
+            if let process { childOwnership?.retire(process) }
             process = nil
             isRunning = false
             settings.cleanupEphemeralSecrets()
             status.markStopped()
+            pendingRestart = false
+            if forRestart { start() }
             return
         }
 
@@ -265,7 +250,39 @@ final class AgentProcess: ObservableObject {
         stop(forRestart: true)
     }
 
+    /// The OS may queue termination after stop/start has installed a new child.
+    /// Only the exact current Process owns runtime state and ephemeral secrets.
+    func handleTermination(of proc: Process) {
+        guard process === proc else { childOwnership?.retire(proc); return }
+        childOwnership?.retire(proc)
+        let previousState = status.state
+        let wasUserStop = userInitiatedStop
+        let shouldRestart = pendingRestart
+        pendingRestart = false
+        process = nil
+        isRunning = false
+        isStarting = false
+        stdoutPipe = nil
+        stderrPipe = nil
+        settings.cleanupEphemeralSecrets()
+
+        if wasUserStop || shouldRestart || proc.terminationStatus == 0 {
+            status.markStopped()
+        } else {
+            status.markError("Exited with code \(proc.terminationStatus)")
+        }
+        if previousState == .connected && !wasUserStop && !shouldRestart {
+            notifications.notify(.disconnected)
+        }
+        if shouldRestart {
+            start()
+        } else if proc.terminationStatus != 0 && !wasUserStop {
+            attemptCrashRestart()
+        }
+    }
+
     private func attemptCrashRestart() {
+        cancelCrashRestart()
         switch crashCoordinator.recordCrash() {
         case .enterCooldown(let duration):
             logBuffer.append("[app] Crash loop detected (\(CrashRestartCoordinator.maxCrashRestarts) crashes in \(Int(CrashRestartCoordinator.crashWindowSeconds))s). Will retry in \(Int(duration / 60)) minutes.")
@@ -284,14 +301,22 @@ final class AgentProcess: ObservableObject {
             logBuffer.append("[app] Agent crashed. Auto-restarting in \(Int(delay))s (attempt \(attempt)/\(CrashRestartCoordinator.maxCrashRestarts))...")
             notifications.notify(.crashRestart(attempt: attempt))
 
-            Task {
-                try? await Task.sleep(for: .seconds(delay))
-                // Re-check that user hasn't manually started/stopped in the meantime
+            let wait = waitForCrashRestart
+            crashRestartTask = Task { [weak self] in
+                await wait(delay)
+                // A retired delay must never act on a later child or cooldown.
+                guard !Task.isCancelled, let self else { return }
+                self.crashRestartTask = nil
                 if self.process == nil && !self.userInitiatedStop {
                     self.start(resetCrashHistory: false)
                 }
             }
         }
+    }
+
+    private func cancelCrashRestart() {
+        crashRestartTask?.cancel()
+        crashRestartTask = nil
     }
 
     private func handleParsedLines(_ lines: [ParsedLogLine]) {
@@ -340,64 +365,20 @@ final class AgentProcess: ObservableObject {
             guard !data.isEmpty else {
                 let trailing = decoder.finish()
                 if !trailing.isEmpty {
-                    handler(trailing.map { ParsedLogLine(raw: $0, event: parser.parse($0)) })
+                    handler(trailing.map { ParsedLogLine(raw: $0.text, event: Self.logEvent(for: $0, parser: parser)) })
                 }
                 handle.readabilityHandler = nil
                 return
             }
             let lines = decoder.ingest(data)
             if !lines.isEmpty {
-                handler(lines.map { ParsedLogLine(raw: $0, event: parser.parse($0)) })
+                handler(lines.map { ParsedLogLine(raw: $0.text, event: Self.logEvent(for: $0, parser: parser)) })
             }
         }
     }
 
-    private func orphanedAgentPIDs(matching binaryPath: String) -> [Int32] {
-        guard binaryPath.hasPrefix("/"),
-              FileManager.default.isExecutableFile(atPath: binaryPath) else {
-            return []
-        }
-
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/bin/ps")
-        task.arguments = ["-axo", "pid=,command="]
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = FileHandle.nullDevice
-
-        do {
-            try task.run()
-        } catch {
-            return []
-        }
-        // Drain stdout before waitUntilExit() to avoid pipe-buffer deadlocks
-        // when process listings are large.
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        task.waitUntilExit()
-        guard task.terminationStatus == 0,
-              let output = String(data: data, encoding: .utf8) else {
-            return []
-        }
-
-        let selfPID = ProcessInfo.processInfo.processIdentifier
-        var pids: [Int32] = []
-
-        for line in output.split(separator: "\n") {
-            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else { continue }
-
-            let pieces = trimmed.split(
-                maxSplits: 1,
-                omittingEmptySubsequences: true,
-                whereSeparator: { $0 == " " || $0 == "\t" }
-            )
-            guard pieces.count == 2, let pid = Int32(pieces[0]), pid != selfPID else { continue }
-            let command = String(pieces[1])
-            if command == binaryPath || command.hasPrefix("\(binaryPath) ") {
-                pids.append(pid)
-            }
-        }
-
-        return pids
+    /// Partial text must never impersonate a complete lifecycle/auth log event.
+    nonisolated static func logEvent(for line: LogPipeChunkDecoder.Line, parser: LogParser) -> AgentEvent {
+        line.isContinuation ? .unknown(line: line.text) : parser.parse(line.text)
     }
 }
