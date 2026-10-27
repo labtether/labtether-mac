@@ -35,6 +35,9 @@ extension AgentSettings {
         let status = bootstrapSecrets.saveStatus(value, account: account)
         if status == errSecSuccess {
             setSecretPersistenceIssue(key: issueKey, message: nil)
+            if account == Self.apiTokenAccount || account == Self.enrollmentTokenAccount {
+                unbindTypedToken()
+            }
         } else {
             setSecretPersistenceIssue(
                 key: issueKey,

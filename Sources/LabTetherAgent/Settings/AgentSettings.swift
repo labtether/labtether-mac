@@ -243,13 +243,14 @@ final class AgentSettings: ObservableObject {
         checkForAppUpdates = preferences.bool("checkForAppUpdates", default: true)
     }
 
-    /// Update-check bookkeeping. Values stay strings because isolated JSON
+    /// Bookkeeping that is not a user setting, such as update checks and the
+    /// Hub a saved token belongs to. Values stay strings because isolated JSON
     /// preferences accept only strings and booleans.
-    func appUpdateRecord(_ key: String) -> String {
+    func storedRecord(_ key: String) -> String {
         preferences.string(key, default: "")
     }
 
-    func setAppUpdateRecord(_ value: String, key: String) {
+    func setStoredRecord(_ value: String, key: String) {
         savePreference(value, key: key)
     }
 

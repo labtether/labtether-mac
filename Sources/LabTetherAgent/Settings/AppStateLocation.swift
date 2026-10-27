@@ -123,6 +123,24 @@ final class AppStateLocation {
         guard unlinkat(directoryFD, name, 0) == 0 else { throw Failure.io }
     }
 
+    /// Removes a regular file this user owns, whatever its mode. The Go child
+    /// writes the Hub CA as 0644, which `remove` refuses. Returns false when
+    /// the file does not exist.
+    @discardableResult
+    func removeRegularFile(_ name: String) throws -> Bool {
+        try validateName(name)
+        var info = stat()
+        guard fstatat(directoryFD, name, &info, AT_SYMLINK_NOFOLLOW) == 0 else {
+            if errno == ENOENT { return false }
+            throw Failure.io
+        }
+        guard info.st_mode & S_IFMT == S_IFREG, info.st_uid == getuid(), info.st_nlink == 1 else {
+            throw Failure.unsafeFile
+        }
+        guard unlinkat(directoryFD, name, 0) == 0 else { throw Failure.io }
+        return true
+    }
+
     /// URL directory hints are not file ownership. Keep exact path spelling,
     /// then perform the actual access through this already-held directory FD.
     func ownedName(for path: String) throws -> String {
