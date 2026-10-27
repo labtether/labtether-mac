@@ -18,6 +18,15 @@ for script_path in "${LOCAL_PREPARE}" "${LOCAL_PUBLISH}" "${LOCAL_VERIFY}" "${LO
   bash -n "${script_path}" || fail "a release script has invalid shell syntax"
 done
 
+# A traced invocation must stop tracing before handling private signing inputs.
+# Use a synthetic argument and --help so no credential, build or signing runs.
+trace_fixture="synthetic-private-selector-for-trace-check"
+trace_output="$(bash -x "${LOCAL_PREPARE}" --tag "${trace_fixture}" --help 2>&1)" \
+  || fail "traced help invocation failed"
+if [[ "${trace_output}" == *"${trace_fixture}"* ]]; then
+  fail "local signing preparation leaks arguments through shell tracing"
+fi
+
 grep -Eq '^[[:space:]]+contents:[[:space:]]+read[[:space:]]*$' "${WORKFLOW}" \
   || fail "tag verification workflow must have read-only contents permission"
 [[ "$(grep -Ec '^[[:space:]]+fetch-depth:[[:space:]]+0[[:space:]]*$' "${WORKFLOW}")" == "2" ]] \

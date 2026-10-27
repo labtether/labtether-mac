@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+set +x
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -24,6 +25,7 @@ ARCHIVE_NAME="labtether-agent-macos-universal.tar.gz"
 CHECKSUM_NAME="${ARCHIVE_NAME}.sha256"
 
 cleanup() {
+  unset SIGNING_IDENTITY NOTARY_PROFILE
   if [[ "${RELEASE_COMPLETE}" != "true" && -n "${OUTPUT_DIR}" \
     && -d "${OUTPUT_DIR}" && ! -L "${OUTPUT_DIR}" ]]; then
     if [[ "${ARCHIVE_OUTPUT_MOVED}" == "true" ]]; then
