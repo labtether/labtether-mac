@@ -91,7 +91,11 @@ The app bundles the same Go agent core used by the Linux agent, wrapped in a nat
 
 ## Uninstall
 
-1. Quit LabTether Agent from the menu bar.
+1. Choose **Reset & Uninstall...** from the menu bar menu. It stops the agent,
+   removes the Hub's SSH key line the agent added to `~/.ssh/authorized_keys`,
+   deletes settings, credentials and history, and quits. The agent core in
+   1.7.0 cannot remove that line; check `~/.ssh/authorized_keys` and delete
+   the Hub's key by hand.
 2. Delete **LabTether Agent.app** from Applications.
 3. Remove the agent from your hub's asset list via the console.
 

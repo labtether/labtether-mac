@@ -20,6 +20,9 @@ and this project uses [Semantic Versioning](https://semver.org/). The older
   WebRTC. A copy left by an older version is removed on the next start.
 - Release builds no longer listen for the profiling notification that any
   local app could send to stop the agent.
+- Reset & Uninstall removes the Hub's SSH key line that the agent added to
+  `~/.ssh/authorized_keys`. This needs an agent core newer than 1.7.0, which
+  records the line; with 1.7.0 the step is skipped and the uninstall goes on.
 
 ### Fixed
 - With Allow Remote Overrides off, settings pushed earlier by the Hub are
