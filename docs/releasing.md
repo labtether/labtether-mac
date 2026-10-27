@@ -69,7 +69,8 @@ reading the Keychain, building, accessing the network, or changing anything:
 For the real preparation, pass the exact tag a second time as the explicit
 notarization confirmation. The script always reads both selectors silently
 from the controlling terminal; it deliberately has no selector command-line
-options that could leak through shell history or the process list:
+options that could leak through shell history or the process list. It disables
+shell tracing before handling inputs and clears both selectors on exit:
 
 ```bash
 ./scripts/release-local.sh \
