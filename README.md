@@ -2,125 +2,103 @@
 
 <img src=".github/logo.svg" alt="LabTether" width="120" />
 
-</div>
+# LabTether for Mac
 
-# LabTether macOS Agent
+**A menu bar app that connects your Mac to your [LabTether](https://github.com/labtether/labtether) hub.**
 
-A native menu bar app that connects your Mac to your [LabTether](https://labtether.com) hub -- telemetry, remote access, and actions without leaving the menu bar.
-
-[![Swift](https://img.shields.io/badge/Swift-5.9+-F05138?style=flat-square&logo=swift&logoColor=white)](https://swift.org)
 [![macOS](https://img.shields.io/badge/macOS-13+-000000?style=flat-square&logo=apple&logoColor=white)](https://developer.apple.com/macos/)
 
-<!-- TODO: Add screenshot of menu bar agent -->
+</div>
 
----
+Install it once and your Mac shows up in the hub next to your servers. You can
+open a terminal or a remote desktop on it from any browser, and the menu bar
+tells you whether it is connected.
+
+## What you get
+
+- **Live metrics.** CPU, memory, disk and network, plus temperature when macOS
+  has a readable sensor.
+- **Terminal and remote desktop** from the hub. No VNC client or SSH keys needed.
+- **Status in the menu bar.** Connection state, alerts and quick actions.
+- **launchd services.** See and manage them from the hub.
+- **Native notifications** when the connection drops or a high or critical
+  alert fires.
+- **Update notice.** The menu shows when a newer signed release is out. The app
+  checks once a day and never downloads anything itself. Turn it off in
+  Settings > Advanced.
 
 ## Install
 
-Download `labtether-agent-macos-universal.tar.gz` and its `.sha256` file from
-[Releases](https://github.com/labtether/labtether-mac/releases/latest), then
-verify and extract the signed application before dragging it to Applications:
+1. Download `labtether-agent-macos-universal.tar.gz` from
+   [Releases](https://github.com/labtether/labtether-mac/releases/latest).
+2. Open it and drag **LabTether Agent.app** to Applications.
+3. Launch it. The menu bar icon walks you through connecting to your hub.
 
-```bash
-shasum -a 256 -c labtether-agent-macos-universal.tar.gz.sha256
-tar xzf labtether-agent-macos-universal.tar.gz
-xcrun stapler validate "LabTether Agent.app"
-codesign --verify --deep --strict --verbose=2 "LabTether Agent.app"
-spctl --assess --type execute --verbose=4 "LabTether Agent.app"
-```
+You need macOS 13 (Ventura) or newer, a running hub, and an enrollment token
+from the hub (**Add Device**). The app is signed and notarized by Apple. To
+check the download yourself first, see
+[docs/verify-download.md](docs/verify-download.md).
 
-Launch **LabTether Agent.app**. The menu bar icon walks you through hub enrollment.
+## Uninstall
 
-For detailed setup, see the [macOS agent setup guide](https://labtether.com/docs/install-upgrade/agent-install-commands-by-os).
+1. In the menu, choose **Reset & Uninstall...**. It stops the agent, removes
+   the hub's SSH key line the agent added to `~/.ssh/authorized_keys`, deletes
+   settings, credentials and history, and quits.
+2. Delete **LabTether Agent.app** from Applications.
+3. Remove the device in the hub.
 
----
+The agent core in 1.7.0 cannot remove that SSH key line. With 1.7.0, delete
+the hub's key from `~/.ssh/authorized_keys` by hand.
 
-## What It Does
+## Troubleshooting
 
-- **System telemetry** -- CPU, memory, disk, and network reported to your hub every heartbeat, with temperature included when macOS exposes a usable sensor source.
-- **Remote access** -- Terminal and desktop sessions from the LabTether console. No VNC clients or SSH keys needed.
-- **Menu bar status** -- Connection state, alerts, and quick actions at a glance.
-- **Service management** -- Monitor and manage launchd services from the dashboard.
-- **Notifications** -- Native macOS alerts for agent connection state and high/critical hub alert transitions.
-- **Update notice** -- The menu shows when a newer signed release is published. The app checks once a day, never downloads anything itself, and the check can be turned off in Settings > Advanced.
+- **No menu bar icon.** In System Settings > General > Login Items, allow
+  LabTether Agent.
+- **Can't connect.** Check that the hub URL opens from this Mac and that the
+  enrollment token is still valid.
+- **Changed the hub URL.** A token works only with the hub that issued it. The
+  app removes the old hub's token on the next start and asks for an enrollment
+  token from the new hub.
+- **High CPU.** Open Console.app, filter for LabTether Agent and
+  [open an issue](https://github.com/labtether/labtether-mac/issues) with what
+  you see.
 
----
+## How it works
 
-## Requirements
+The app wraps the same Go agent core used on Linux in a native Swift app. It
+keeps one encrypted WebSocket connection open to your hub. The hub uses that
+connection to read metrics, open terminal and desktop sessions, and run
+actions.
 
-- macOS 13 (Ventura) or later
-- A running [LabTether hub](https://github.com/labtether/labtether) to connect to
-- An enrollment token generated from the hub console
+## Build from source
 
----
-
-## Build From Source
-
-Use stable Xcode 27 for local builds. The macOS 13 deployment target and
-Swift 5 language mode remain supported. Hosted CI uses the current stable
-`macos-26` image (Xcode 26.6 / Swift 6.3.3) until Xcode 27 is available on
-a stable runner image; no preview or larger paid runner is required.
-The sibling [`labtether-agent`](https://github.com/labtether/labtether-agent)
-checkout and its declared Go toolchain are also required because the native app
-always ships the Go agent core inside its signed application bundle.
+You need stable Xcode 27 and a sibling checkout of
+[labtether-agent](https://github.com/labtether/labtether-agent).
 
 ```bash
 git clone https://github.com/labtether/labtether-agent ../labtether-agent
 ./scripts/build-app.sh --configuration release
 ```
 
-The result is `build/LabTether Agent.app`. The builder fails if the Go child,
-Swift host, resource bundle, icon, expected architecture, or signature is
-missing. Use `LABTETHER_AGENT_REPO` when the agent checkout is elsewhere.
+The app lands in `build/LabTether Agent.app`. Toolchain and CI details are in
+[docs/building.md](docs/building.md).
 
-Maintainers should follow the [local-only signing, notarization, and publication
-runbook](docs/releasing.md). Hosted CI verifies source tags but never receives
-signing or notarization credentials and never publishes release bytes.
+## Contributing
 
-For most users, download the pre-built app from [Releases](https://github.com/labtether/labtether-mac/releases/latest) instead.
+If you work with an AI coding agent, point it at [AGENTS.md](AGENTS.md) first.
+Signing, notarization and publishing are in [docs/releasing.md](docs/releasing.md).
+Changes are in [CHANGELOG.md](CHANGELOG.md).
 
----
+## Help
 
-## How It Works
-
-The macOS agent runs as a lightweight menu bar app. On launch, it establishes a persistent WebSocket connection to your hub and begins reporting system telemetry. The hub can then issue commands back -- opening terminal sessions, querying service status, or triggering actions -- all through the encrypted channel.
-
-The app bundles the same Go agent core used by the Linux agent, wrapped in a native Swift UI for macOS integration.
-
----
-
-## Uninstall
-
-1. Choose **Reset & Uninstall...** from the menu bar menu. It stops the agent,
-   removes the Hub's SSH key line the agent added to `~/.ssh/authorized_keys`,
-   deletes settings, credentials and history, and quits. The agent core in
-   1.7.0 cannot remove that line; check `~/.ssh/authorized_keys` and delete
-   the Hub's key by hand.
-2. Delete **LabTether Agent.app** from Applications.
-3. Remove the agent from your hub's asset list via the console.
-
----
-
-## Troubleshooting
-
-- **Menu bar icon not appearing** -- Check System Settings > Login Items to confirm LabTether Agent is allowed.
-- **Connection issues** -- Verify the hub URL is reachable and that your enrollment token is valid.
-- **High CPU usage** -- Check Console.app for agent logs and report an issue if the problem persists.
-
----
-
-## Links
-
-- **LabTether Hub** -- [github.com/labtether/labtether](https://github.com/labtether/labtether)
-- **Linux Agent** -- [github.com/labtether/labtether-agent](https://github.com/labtether/labtether-agent)
-- **Windows Agent** -- [github.com/labtether/labtether-win](https://github.com/labtether/labtether-win)
-- **Documentation** -- [labtether.com/docs](https://labtether.com/docs)
-- **Community** -- [GitHub Discussions](https://github.com/labtether/labtether/discussions)
-- **Security** -- report vulnerabilities privately, see [SECURITY.md](SECURITY.md)
-- **Website** -- [labtether.com](https://labtether.com)
+- [Docs](https://labtether.com/docs) and [GitHub Discussions](https://github.com/labtether/labtether/discussions)
+- Security issues: report privately as described in [SECURITY.md](SECURITY.md)
+- Related: [LabTether hub](https://github.com/labtether/labtether),
+  [Linux agent](https://github.com/labtether/labtether-agent),
+  [Windows app](https://github.com/labtether/labtether-win)
 
 ## License
 
-Source-available, all rights reserved. Copyright 2026 LabTether. You may view
+Source available, all rights reserved. Copyright 2026 LabTether. You may view
 and study this code, but you may not copy, modify, distribute or use it without
 written permission. See [LICENSE](LICENSE).
