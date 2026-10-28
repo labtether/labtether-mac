@@ -96,7 +96,7 @@ struct SettingsConnectionTab: View {
 
                     if showToken {
                         TextField("API Token", text: $settings.apiToken,
-                                  prompt: Text("Owner or agent token").foregroundColor(LT.textMuted.opacity(0.5)))
+                                  prompt: Text("Agent token for this device").foregroundColor(LT.textMuted.opacity(0.5)))
                             .textFieldStyle(.plain)
                             .font(LT.inter(12))
                             .foregroundStyle(LT.textPrimary)
@@ -104,7 +104,7 @@ struct SettingsConnectionTab: View {
                             .onChange(of: settings.apiToken) { _ in settings.markChanged() }
                     } else {
                         SecureField("API Token", text: $settings.apiToken,
-                                    prompt: Text("Owner or agent token").foregroundColor(LT.textMuted.opacity(0.5)))
+                                    prompt: Text("Agent token for this device").foregroundColor(LT.textMuted.opacity(0.5)))
                             .textFieldStyle(.plain)
                             .font(LT.inter(12))
                             .foregroundStyle(LT.textPrimary)

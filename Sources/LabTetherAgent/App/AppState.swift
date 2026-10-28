@@ -176,7 +176,11 @@ final class AppState: ObservableObject {
         screenSharing.startMonitoring()
         // Notify-only app update check (at most once a day, opt-out in Settings).
         appUpdates.start()
+        #if DEBUG
+        // Profiling hook for local debug builds. Any local process can post a
+        // distributed notification, so release builds never listen for it.
         if settings.allowsSystemIntegration { installPerformanceControlObserver() }
+        #endif
         debugBoot("AppState init complete")
     }
 
@@ -229,6 +233,7 @@ final class AppState: ObservableObject {
         menuBarLabelPresentation.kind
     }
 
+    #if DEBUG
     private func installPerformanceControlObserver() {
         performanceControlObserver = DistributedNotificationCenter.default().addObserver(
             forName: .ltPerformanceControlCommand,
@@ -269,8 +274,11 @@ final class AppState: ObservableObject {
             break
         }
     }
+    #endif
 }
 
+#if DEBUG
 private extension Notification.Name {
     static let ltPerformanceControlCommand = Notification.Name("LabTetherPerformanceControlCommand")
 }
+#endif

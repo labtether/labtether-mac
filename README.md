@@ -41,9 +41,14 @@ check the download yourself first, see
 
 ## Uninstall
 
-1. Quit LabTether Agent from the menu bar.
+1. In the menu, choose **Reset & Uninstall...**. It stops the agent, removes
+   the hub's SSH key line the agent added to `~/.ssh/authorized_keys`, deletes
+   settings, credentials and history, and quits.
 2. Delete **LabTether Agent.app** from Applications.
 3. Remove the device in the hub.
+
+The agent core in 1.7.0 cannot remove that SSH key line. With 1.7.0, delete
+the hub's key from `~/.ssh/authorized_keys` by hand.
 
 ## Troubleshooting
 
@@ -51,6 +56,9 @@ check the download yourself first, see
   LabTether Agent.
 - **Can't connect.** Check that the hub URL opens from this Mac and that the
   enrollment token is still valid.
+- **Changed the hub URL.** A token works only with the hub that issued it. The
+  app removes the old hub's token on the next start and asks for an enrollment
+  token from the new hub.
 - **High CPU.** Open Console.app, filter for LabTether Agent and
   [open an issue](https://github.com/labtether/labtether-mac/issues) with what
   you see.

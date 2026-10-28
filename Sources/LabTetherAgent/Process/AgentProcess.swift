@@ -106,10 +106,26 @@ final class AgentProcess: ObservableObject {
             crashCoordinator.cancelCooldown()
         }
 
+        // A saved token belongs to the Hub that issued it. Remove it before
+        // launching against a different Hub so it is never sent there.
+        let droppedOtherHubCredentials: Bool
+        do {
+            droppedOtherHubCredentials = try settings.dropCredentialsFromOtherHub()
+        } catch {
+            status.markError("The token saved for the previous Hub could not be removed. The agent was not started.")
+            logBuffer.append("[app] Could not remove the previous Hub's token: \(error.localizedDescription)")
+            return
+        }
+        if droppedOtherHubCredentials {
+            logBuffer.append("[app] The Hub address changed, so the token saved for the previous Hub was removed.")
+        }
+
         // Validate config before launching
         guard settings.isConfigured else {
             debugBootProcess("start aborted: settings.isConfigured=false")
-            status.markError("Hub URL and token required — open Settings to configure")
+            status.markError(droppedOtherHubCredentials
+                ? "The Hub changed. Add an enrollment token from the new Hub in Settings."
+                : "Hub URL and token required — open Settings to configure")
             return
         }
         let validationErrors = settings.validationErrors()

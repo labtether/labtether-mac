@@ -21,11 +21,17 @@ final class PerformanceAutomationController: ObservableObject {
         self.logBuffer = logBuffer
     }
 
+    /// Profiling input comes from outside the app, so keep runs short and finite.
+    static func boundedDuration(_ seconds: TimeInterval) -> TimeInterval {
+        seconds.isFinite ? min(max(seconds, 0), 120) : 0
+    }
+
     func runPopOutScrollProfile(durationSeconds: TimeInterval) {
         scrollTask?.cancel()
+        let duration = Self.boundedDuration(durationSeconds)
         scrollTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            let deadline = Date().addingTimeInterval(durationSeconds)
+            let deadline = Date().addingTimeInterval(duration)
             var targetID = Self.popOutBottomAnchorID
             while Date() < deadline {
                 nextScrollCommandID += 1
@@ -37,11 +43,14 @@ final class PerformanceAutomationController: ObservableObject {
         }
     }
 
-    func runLogBurst(durationSeconds: TimeInterval, linesPerBatch: Int = 40) {
+    func runLogBurst(durationSeconds: TimeInterval, linesPerBatch requestedLines: Int = 40) {
         logBurstTask?.cancel()
+        // A negative count would trap when building the range below.
+        let linesPerBatch = min(max(requestedLines, 1), 500)
+        let duration = Self.boundedDuration(durationSeconds)
         logBurstTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            let deadline = Date().addingTimeInterval(durationSeconds)
+            let deadline = Date().addingTimeInterval(duration)
             var sequence = 0
             while Date() < deadline {
                 let now = Date()

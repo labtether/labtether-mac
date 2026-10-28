@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/). The older
 `2026.1` entry predates the switch from calendar versions.
 
+## [Unreleased]
+
+### Security
+- Changing the Hub URL no longer sends the token saved for the previous Hub to
+  the new address. On the next start the old token, the enrollment record and
+  the previous Hub's CA are removed, and the app asks for an enrollment token
+  from the new Hub. A token typed after the change is kept.
+- The app no longer suggests the Hub owner token. Hubs from 1.7.0 refuse it
+  from agents. If you saved the owner token here, clear it in Settings, enroll
+  with an enrollment token, and change the owner token on the Hub.
+- The TURN password is no longer written to a file, because macOS does not use
+  WebRTC. A copy left by an older version is removed on the next start.
+- Release builds no longer listen for the profiling notification that any
+  local app could send to stop the agent.
+- Reset & Uninstall removes the Hub's SSH key line that the agent added to
+  `~/.ssh/authorized_keys`. This needs an agent core newer than 1.7.0, which
+  records the line; with 1.7.0 the step is skipped and the uninstall goes on.
+
+### Fixed
+- With Allow Remote Overrides off, settings pushed earlier by the Hub are
+  removed on the next start, so the agent runs the values shown in Settings.
+
 ## [1.7.0] - unreleased
 
 Changes since the last public release, v1.4.0.
