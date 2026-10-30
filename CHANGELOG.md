@@ -50,6 +50,8 @@ released.
   "Can't reach the Hub" or "The Hub's certificate is not trusted") instead
   of "transient". When macOS blocks Local Network access, it says where to
   turn it on.
+- `--state-directory` spelled under `/private` (for example
+  `/private/var/folders/...`) no longer makes the app exit at start.
 
 ### Security
 - Releases are signed and notarized on the maintainer's machine. Hosted CI only

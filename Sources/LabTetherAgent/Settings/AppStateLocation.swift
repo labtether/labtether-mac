@@ -27,13 +27,25 @@ final class AppStateLocation {
         guard indices.count <= 1 else { throw Failure.invalidRoot }
         if let index = indices.first {
             guard index + 1 < arguments.count, arguments[index + 1].hasPrefix("/") else { throw Failure.invalidRoot }
-            return try AppStateLocation(root: URL(fileURLWithPath: arguments[index + 1]), isolated: true)
+            return try AppStateLocation(root: foundationSpelling(arguments[index + 1]), isolated: true)
         }
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let root = support.appendingPathComponent("LabTether")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true,
                                                 attributes: [.posixPermissions: 0o700])
         return try AppStateLocation(root: root.resolvingSymlinksInPath(), isolated: false)
+    }
+
+    /// Foundation drops a leading /private (macOS links /var, /tmp and /etc
+    /// into it) whenever it standardizes or resolves a path, so
+    /// `/private/var/x` never equals its own resolved form and was refused.
+    /// Spell such a path the way Foundation does; every other spelling is kept
+    /// exactly and still checked by `init`.
+    static func foundationSpelling(_ path: String) -> URL {
+        let url = URL(fileURLWithPath: path)
+        guard path.hasPrefix("/private/") else { return url }
+        let stripped = String(path.dropFirst("/private".count))
+        return url.standardizedFileURL.path == stripped ? URL(fileURLWithPath: stripped) : url
     }
 
     init(root: URL, isolated: Bool) throws {
