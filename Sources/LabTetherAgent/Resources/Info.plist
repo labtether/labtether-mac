@@ -22,5 +22,7 @@
     <string>AppIcon</string>
     <key>LSUIElement</key>
     <true/>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>LabTether Agent connects to your LabTether Hub on your local network.</string>
 </dict>
 </plist>

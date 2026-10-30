@@ -44,6 +44,8 @@ released.
 - The Screen Sharing grant command and console links are escaped safely.
 - With Allow Remote Overrides off, settings pushed earlier by the Hub are
   removed on the next start, so the agent runs the values shown in Settings.
+- The macOS Local Network prompt now says why the app asks: "LabTether Agent
+  connects to your LabTether Hub on your local network."
 
 ### Security
 - Releases are signed and notarized on the maintainer's machine. Hosted CI only
