@@ -137,6 +137,7 @@ final class LocalAPIClientTests: XCTestCase {
             connectionState: connectionState,
             disconnectedAt: nil,
             lastError: nil,
+            lastErrorReason: nil,
             uptime: "5m",
             startedAt: nil,
             localBindAddress: "127.0.0.1:8091",

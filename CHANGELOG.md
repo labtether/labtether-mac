@@ -46,6 +46,10 @@ released.
   removed on the next start, so the agent runs the values shown in Settings.
 - The macOS Local Network prompt now says why the app asks: "LabTether Agent
   connects to your LabTether Hub on your local network."
+- While the agent cannot reach the Hub, the menu shows why (for example
+  "Can't reach the Hub" or "The Hub's certificate is not trusted") instead
+  of "transient". When macOS blocks Local Network access, it says where to
+  turn it on.
 
 ### Security
 - Releases are signed and notarized on the maintainer's machine. Hosted CI only
