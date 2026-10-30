@@ -47,9 +47,6 @@ check the download yourself first, see
 2. Delete **LabTether Agent.app** from Applications.
 3. Remove the device in the hub.
 
-The agent core in 1.7.0 cannot remove that SSH key line. With 1.7.0, delete
-the hub's key from `~/.ssh/authorized_keys` by hand.
-
 ## Troubleshooting
 
 - **No menu bar icon.** In System Settings > General > Login Items, allow
