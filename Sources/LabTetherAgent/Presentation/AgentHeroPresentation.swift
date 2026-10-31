@@ -23,10 +23,13 @@ struct AgentHeroPresentation: Equatable {
         apiUptime: String?,
         apiLastError: String?,
         hubConnectionState: String,
-        isReachable: Bool
+        isReachable: Bool,
+        apiLastErrorReason: String? = nil
     ) -> AgentHeroPresentation {
         let trimmedStatusError = trimmed(statusLastError)
-        let trimmedAPIError = trimmed(apiLastError)
+        // "transient" is the agent's retry class, not text for people.
+        let trimmedAPIError = trimmed(apiLastError).flatMap { $0 == "transient" ? nil : $0 }
+        let reason = HubConnectReason(code: apiLastErrorReason)?.summary
 
         // The wrapper marks the process as `.starting` immediately after launch
         // and log parsing may leave that state behind. Once the child process is
@@ -88,14 +91,14 @@ struct AgentHeroPresentation: Equatable {
             case "connecting":
                 return AgentHeroPresentation(
                     label: "Reconnecting",
-                    subtitle: trimmedAPIError ?? trimmedStatusError ?? "Attempting to reconnect",
+                    subtitle: reason ?? trimmedAPIError ?? trimmedStatusError ?? "Attempting to reconnect",
                     tone: .warn,
                     breatheDuration: 2.0
                 )
             case "auth_failed":
                 return AgentHeroPresentation(
                     label: "Auth Failed",
-                    subtitle: trimmedAPIError ?? trimmedStatusError ?? "Hub authentication failed",
+                    subtitle: reason ?? trimmedAPIError ?? trimmedStatusError ?? "Hub authentication failed",
                     tone: .bad,
                     breatheDuration: 1.5
                 )
@@ -167,7 +170,8 @@ struct AgentHeroPresentation: Equatable {
             apiUptime: runtime.snapshot.uptime,
             apiLastError: runtime.snapshot.lastError,
             hubConnectionState: runtime.snapshot.hubConnectionState,
-            isReachable: runtime.snapshot.isReachable
+            isReachable: runtime.snapshot.isReachable,
+            apiLastErrorReason: runtime.snapshot.lastErrorReason
         )
     }
 

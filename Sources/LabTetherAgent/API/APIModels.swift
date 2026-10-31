@@ -12,6 +12,7 @@ struct AgentStatusResponse: Codable, Equatable, Sendable {
     let connectionState: String?   // "connected", "connecting", "auth_failed", "disconnected"
     let disconnectedAt: Date?
     let lastError: String?
+    let lastErrorReason: String?   // see HubConnectReason
     let uptime: String?
     let startedAt: Date?
     let localBindAddress: String?
@@ -33,6 +34,7 @@ struct AgentStatusResponse: Codable, Equatable, Sendable {
         case connectionState = "connection_state"
         case disconnectedAt = "disconnected_at"
         case lastError = "last_error"
+        case lastErrorReason = "last_error_reason"
         case startedAt = "started_at"
         case localBindAddress = "local_bind_address"
         case localAuthEnabled = "local_auth_enabled"
