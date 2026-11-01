@@ -278,7 +278,7 @@ struct SettingsAdvancedTab: View {
 
                     SettingsSecureIconField(icon: "lock.shield", label: "TURN Password",
                                             text: $settings.webrtcTurnPass,
-                                            prompt: "Optional (stored in keychain)",
+                                            prompt: "Optional",
                                             onChange: { settings.markChanged() })
 
                     SettingsIconField(icon: "speedometer", label: "Capture FPS",

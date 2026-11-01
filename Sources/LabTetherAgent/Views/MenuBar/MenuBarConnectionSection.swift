@@ -46,6 +46,13 @@ struct MenuBarConnectionSection: View {
                         }
                     }
 
+                    if let fix = connectFix {
+                        Text(fix)
+                            .font(LT.inter(10))
+                            .foregroundStyle(LT.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                     if !status.assetID.isEmpty {
                         LTCopyRow(label: "Asset", value: status.assetID) {
                             onCopy(status.assetID, "Asset")
@@ -64,6 +71,12 @@ struct MenuBarConnectionSection: View {
             .padding(.horizontal, LT.space12)
         }
         .padding(.bottom, LT.space6)
+    }
+
+    /// The fix for the agent's last connect failure, shown while reconnecting.
+    private var connectFix: String? {
+        guard runtime.snapshot.hubConnectionState == "connecting" else { return nil }
+        return HubConnectReason(code: runtime.snapshot.lastErrorReason)?.fix
     }
 
     private var connectionIcon: String {

@@ -111,7 +111,7 @@ struct OnboardingAuthStep: View {
 
             Text(tokenType == .enrollment
                  ? "Enrollment tokens register this device and are consumed on first connection. Generate one from the hub dashboard."
-                 : "API tokens allow ongoing authentication. Use an owner token or a dedicated agent token from the hub settings.")
+                 : "Use the agent token the hub issued to this device. The hub refuses its owner token from agents.")
                 .font(LT.inter(11))
                 .foregroundStyle(LT.textMuted)
                 .fixedSize(horizontal: false, vertical: true)

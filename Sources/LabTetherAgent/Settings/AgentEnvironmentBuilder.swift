@@ -90,7 +90,10 @@ enum AgentEnvironmentBuilder {
         if !turnUser.isEmpty {
             env["LABTETHER_WEBRTC_TURN_USER"] = turnUser
         }
-        let turnPass = settings.webrtcTurnPass.trimmingCharacters(in: .whitespacesAndNewlines)
+        // The password reaches the child only through a private file. Keep no
+        // copy while WebRTC cannot run, which is always the case on macOS.
+        let turnPass = settings.effectiveWebRTCEnabled
+            ? settings.webrtcTurnPass.trimmingCharacters(in: .whitespacesAndNewlines) : ""
         if !turnPass.isEmpty {
             try settings.persistRuntimeSecret(
                 turnPass,
@@ -120,6 +123,14 @@ enum AgentEnvironmentBuilder {
         env["LABTETHER_SERVICES_DISCOVERY_LAN_SCAN_PORTS"] = settings.normalizedPortList(settings.servicesDiscoveryLANScanPorts)
         env["LABTETHER_SERVICES_DISCOVERY_LAN_SCAN_MAX_HOSTS"] = settings.normalizedLANScanMaxHosts()
         env["LABTETHER_TOKEN_FILE"] = settings.tokenFilePath
+        // The child saves Hub-pushed settings here and prefers them over the
+        // values above. With Allow Remote Overrides off they must not linger.
+        if !settings.allowRemoteOverrides {
+            do { _ = try settings.removeChildFile("agent-config.json") } catch {
+                throw AgentSettingsSecretError(
+                    message: "Settings saved from the Hub could not be removed from \(settings.agentSettingsFilePath).")
+            }
+        }
         env["LABTETHER_AGENT_SETTINGS_FILE"] = settings.agentSettingsFilePath
         env["LABTETHER_DEVICE_KEY_FILE"] = settings.deviceKeyFilePath
         env["LABTETHER_DEVICE_PUBLIC_KEY_FILE"] = settings.devicePublicKeyFilePath

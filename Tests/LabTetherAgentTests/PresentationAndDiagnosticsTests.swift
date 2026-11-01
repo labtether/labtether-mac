@@ -73,6 +73,40 @@ final class AgentHeroPresentationTests: XCTestCase {
         XCTAssertEqual(presentation.subtitle, "Hub rejected the configured token")
         XCTAssertEqual(presentation.tone, .bad)
     }
+
+    // Risk: a Mac with Local Network access blocked showed "transient" while
+    // reconnecting forever. The agent's reason must reach the menu as text.
+    func testReconnectingShowsAgentConnectReasonInsteadOfRetryClass() throws {
+        let json = #"{"agent_name":"mac","asset_id":"a","port":"8091","connected":false,"#
+            + #""connection_state":"connecting","last_error":"transient","#
+            + #""last_error_reason":"host_unreachable","metrics":{"cpu_percent":0,"#
+            + #""memory_percent":0,"disk_percent":0,"net_rx_bytes_per_sec":0,"#
+            + #""net_tx_bytes_per_sec":0},"alerts":[]}"#
+        let status = try JSONDecoder().decode(AgentStatusResponse.self, from: Data(json.utf8))
+
+        func subtitle(reason: String?) -> String {
+            AgentHeroPresentation.resolve(
+                processIsRunning: true,
+                processIsStarting: false,
+                statusState: .reconnecting,
+                statusLastError: "",
+                statusUptime: nil,
+                apiUptime: nil,
+                apiLastError: status.lastError,
+                hubConnectionState: "connecting",
+                isReachable: true,
+                apiLastErrorReason: reason
+            ).subtitle
+        }
+
+        XCTAssertEqual(subtitle(reason: status.lastErrorReason), "Can't reach the Hub")
+        XCTAssertEqual(
+            HubConnectReason(code: status.lastErrorReason)?.fix,
+            "Check System Settings > Privacy & Security > Local Network and turn on LabTether Agent."
+        )
+        XCTAssertEqual(subtitle(reason: nil), "Attempting to reconnect")
+        XCTAssertEqual(subtitle(reason: "something_new"), "Attempting to reconnect")
+    }
 }
 
 final class DiagnosticsLogSummaryTests: XCTestCase {

@@ -7,6 +7,7 @@ struct LocalAPIRuntimeSnapshot: Equatable {
     var assetID: String?
     var uptime: String?
     var lastError: String?
+    var lastErrorReason: String?
 }
 
 @MainActor
@@ -276,7 +277,8 @@ final class LocalAPIClient: ObservableObject {
             hubConnectionState: decoded.connectionState ?? (decoded.connected ? "connected" : "disconnected"),
             assetID: decoded.assetID,
             uptime: decoded.uptime,
-            lastError: decoded.lastError
+            lastError: decoded.lastError,
+            lastErrorReason: decoded.lastErrorReason
         )
         publishMetricsSnapshot(decoded.metrics, appendHistory: appendHistory)
         alerts.publish(LocalAPIAlertsSnapshot(alerts: decoded.alerts))
@@ -298,7 +300,8 @@ final class LocalAPIClient: ObservableObject {
         hubConnectionState: String,
         assetID: String?,
         uptime: String?,
-        lastError: String?
+        lastError: String?,
+        lastErrorReason: String? = nil
     ) {
         runtime.publish(
             LocalAPIRuntimeSnapshot(
@@ -306,7 +309,8 @@ final class LocalAPIClient: ObservableObject {
                 hubConnectionState: hubConnectionState,
                 assetID: assetID,
                 uptime: uptime,
-                lastError: lastError
+                lastError: lastError,
+                lastErrorReason: lastErrorReason
             )
         )
     }
@@ -447,7 +451,8 @@ final class LocalAPIClient: ObservableObject {
                 hubConnectionState: latestHubConnectionState,
                 assetID: latest.assetID,
                 uptime: latest.uptime,
-                lastError: latest.lastError
+                lastError: latest.lastError,
+                lastErrorReason: latest.lastErrorReason
             )
         } else {
             latestHubConnectionState = runtime.snapshot.hubConnectionState

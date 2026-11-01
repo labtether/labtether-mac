@@ -1,6 +1,7 @@
 import AppKit
 
-/// Performs a clean uninstall: stops agent, removes config, credentials, and history, then quits.
+/// Performs a clean uninstall: stops agent, removes the Hub SSH key it added,
+/// removes config, credentials, and history, then quits.
 enum UninstallManager {
     @MainActor
     static func performUninstall(
@@ -12,19 +13,32 @@ enum UninstallManager {
         let appSupportURL = settings.appSupportDirectory
         // 1. Stop agent
         agentProcess.forceKill()
-        // 2. Remove login item
+        // 2. Remove the Hub SSH key line the agent added, while its record
+        //    still exists. This never stops the uninstall.
+        if case .failed(let detail) = HubSSHKeyRemover.run(
+            agentBinaryPath: BundleHelper.agentBinaryPath,
+            tokenFilePath: settings.tokenFilePath,
+            agentSettingsFilePath: settings.agentSettingsFilePath
+        ) {
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "The Hub's SSH key was not removed"
+            alert.informativeText = "LabTether could not remove the line it added to ~/.ssh/authorized_keys (\(detail)). Remove that line by hand. Uninstall will continue."
+            alert.runModal()
+        }
+        // 3. Remove login item
         _ = LoginItemManager.setEnabled(false)
-        // 3. Delete Keychain entries
+        // 4. Delete Keychain entries
         _ = KeychainSecretStore.deleteStatus(account: "apiToken")
         _ = KeychainSecretStore.deleteStatus(account: "enrollmentToken")
         _ = KeychainSecretStore.deleteStatus(account: "webrtcTurnPass")
-        // 4. Remove Application Support directory (best-effort)
+        // 5. Remove Application Support directory (best-effort)
         try? FileManager.default.removeItem(at: appSupportURL)
-        // 5. Clear UserDefaults
+        // 6. Clear UserDefaults
         if let bundleID = Bundle.main.bundleIdentifier {
             UserDefaults.standard.removePersistentDomain(forName: bundleID)
         }
-        // 6. Quit
+        // 7. Quit
         NSApp.terminate(nil)
     }
 }

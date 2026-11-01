@@ -63,20 +63,20 @@ final class AppUpdateChecker: ObservableObject {
         guard !checking, isCheckDue else { return }
         checking = true
         // Record the attempt first so failures still wait a full day.
-        settings.setAppUpdateRecord(String(Date().timeIntervalSince1970), key: Self.lastCheckKey)
+        settings.setStoredRecord(String(Date().timeIntervalSince1970), key: Self.lastCheckKey)
         Task { [weak self] in
             guard let self else { return }
             let release = await self.fetchLatestRelease()
             self.checking = false
             guard let release else { return }
-            self.settings.setAppUpdateRecord(release.version, key: Self.latestVersionKey)
-            self.settings.setAppUpdateRecord(release.pageURL.absoluteString, key: Self.releasePageKey)
+            self.settings.setStoredRecord(release.version, key: Self.latestVersionKey)
+            self.settings.setStoredRecord(release.pageURL.absoluteString, key: Self.releasePageKey)
             if self.settings.checkForAppUpdates { self.showRecordedRelease() }
         }
     }
 
     private var isCheckDue: Bool {
-        guard let last = Double(settings.appUpdateRecord(Self.lastCheckKey)) else { return true }
+        guard let last = Double(settings.storedRecord(Self.lastCheckKey)) else { return true }
         let elapsed = Date().timeIntervalSince1970 - last
         // A clock that moved backwards also makes the record due.
         return elapsed >= Self.checkInterval || elapsed < 0
@@ -85,12 +85,12 @@ final class AppUpdateChecker: ObservableObject {
     /// Keeps a found update visible across relaunches until this build is at
     /// least that version.
     private func showRecordedRelease() {
-        let version = settings.appUpdateRecord(Self.latestVersionKey)
+        let version = settings.storedRecord(Self.latestVersionKey)
         guard AppVersion.isNewer(version, than: currentVersion) else {
             if availableUpdate != nil { availableUpdate = nil }
             return
         }
-        let page = AppUpdateRelease.trustedPage(URL(string: settings.appUpdateRecord(Self.releasePageKey)))
+        let page = AppUpdateRelease.trustedPage(URL(string: settings.storedRecord(Self.releasePageKey)))
         let next = AppUpdateRelease(version: version, pageURL: page)
         if availableUpdate != next { availableUpdate = next }
     }

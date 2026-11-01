@@ -3,6 +3,25 @@ import Darwin
 @testable import LabTetherAgent
 
 final class AppStateIsolationTests: XCTestCase {
+    // Risk: `--state-directory /private/var/...` made the app exit at start
+    // while the same folder spelled `/var/...` worked.
+    func testStateDirectorySpelledWithPrivateOpensLikeVarSpelling() throws {
+        let environment = ProcessInfo.processInfo.environment
+        let temporary = environment["LABTETHER_JOB_SCRATCH"] ?? environment["TMPDIR"] ?? ""
+        let base = URL(fileURLWithPath: temporary, isDirectory: true).resolvingSymlinksInPath()
+        guard base.path.hasPrefix("/var/") else { throw XCTSkip("temporary folder is not under /var") }
+        let root = base.appendingPathComponent("lt-state-" + UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false,
+                                                attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let location = try AppStateLocation.bootstrap(
+            arguments: ["LabTetherAgent", "--state-directory", "/private" + root.path])
+        XCTAssertEqual(location.root.path, root.path)
+        XCTAssertThrowsError(try AppStateLocation.bootstrap(
+            arguments: ["LabTetherAgent", "--state-directory", "/private" + root.path + "/../x"]))
+    }
+
     @MainActor
     func testIsolatedOnboardingPersistsOnlyOwnedSettingsAndRuntimeSecrets() throws {
         let first = try PrivateStateFixture()

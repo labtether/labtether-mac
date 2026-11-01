@@ -53,6 +53,10 @@ plutil -lint "${INFO_PLIST}" >/dev/null
   echo "unexpected CFBundleExecutable" >&2
   exit 1
 }
+[[ -n "$(plutil -extract NSLocalNetworkUsageDescription raw "${INFO_PLIST}" 2>/dev/null)" ]] || {
+  echo "missing NSLocalNetworkUsageDescription" >&2
+  exit 1
+}
 [[ -x "${HOST_BINARY}" ]] || { echo "missing executable Swift host" >&2; exit 1; }
 [[ -x "${CHILD_BINARY}" ]] || { echo "missing executable Go child agent" >&2; exit 1; }
 [[ -d "${RESOURCE_BUNDLE}" ]] || { echo "missing SwiftPM resource bundle" >&2; exit 1; }
