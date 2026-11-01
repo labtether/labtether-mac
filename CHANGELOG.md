@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/). The older
 `2026.1` entry predates the switch from calendar versions.
 
-## [1.7.1] - unreleased
+## [1.7.1] - 2026-10-31
 
 Changes since the last public release, v1.4.0. v1.7.0 was tagged but never
 released.
