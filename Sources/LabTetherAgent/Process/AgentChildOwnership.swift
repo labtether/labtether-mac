@@ -31,7 +31,7 @@ final class AgentChildOwnership {
         if let actual = try Self.identity(record.child.pid) {
             // A stale or reused PID never grants authority over the replacement.
             guard actual == record.child,
-                  actual.executable == URL(fileURLWithPath: binaryPath).resolvingSymlinksInPath().path else {
+                  actual.executable == Self.realPath(binaryPath) else {
                 throw AppStateLocation.Failure.unsafeFile
             }
             guard kill(actual.pid, SIGTERM) == 0 || errno == ESRCH else { throw AppStateLocation.Failure.io }
@@ -49,7 +49,7 @@ final class AgentChildOwnership {
     func register(_ process: Process, binaryPath: String) throws {
         guard let identity = try Self.identity(process.processIdentifier),
               identity.uid == getuid(),
-              identity.executable == URL(fileURLWithPath: binaryPath).resolvingSymlinksInPath().path else {
+              identity.executable == Self.realPath(binaryPath) else {
             throw AppStateLocation.Failure.unsafeFile
         }
         let record = Record(rootDevice: location.device, rootInode: location.inode, child: identity)
@@ -69,6 +69,16 @@ final class AgentChildOwnership {
             self.current = nil
             currentProcess = nil
         } catch { /* Keep unknown state for the next locked startup to reject. */ }
+    }
+
+    /// The kernel names a running executable by its real path, such as
+    /// /private/var/... for an app in a temporary folder or one macOS runs
+    /// from a translocated copy. Foundation's resolvingSymlinksInPath() drops
+    /// that /private, so the paths must be compared with realpath(3).
+    static func realPath(_ path: String) -> String {
+        guard let resolved = realpath(path, nil) else { return path }
+        defer { free(resolved) }
+        return String(cString: resolved)
     }
 
     static func identity(_ pid: Int32) throws -> Identity? {
