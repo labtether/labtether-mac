@@ -110,7 +110,7 @@ struct OnboardingAuthStep: View {
                 .padding(.top, 1)
 
             Text(tokenType == .enrollment
-                 ? "Enrollment tokens register this device and are consumed on first connection. Generate one from the hub dashboard."
+                 ? "An enrollment token registers this device. Create one in the hub with Add device on the Devices page."
                  : "Use the agent token the hub issued to this device. The hub refuses its owner token from agents.")
                 .font(LT.inter(11))
                 .foregroundStyle(LT.textMuted)

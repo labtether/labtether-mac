@@ -5,6 +5,8 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd -P)"
+# shellcheck source=scripts/release-provenance.sh
+source "${SCRIPT_DIR}/release-provenance.sh"
 
 TAG=""
 BUILD_NUMBER=""
@@ -214,10 +216,8 @@ HOST_PATH="${APP_PATH}/Contents/MacOS/LabTetherAgent"
 PROVENANCE_PATH="${APP_PATH}/Contents/Resources/release-provenance.json"
 [[ -d "${APP_PATH}" && ! -L "${APP_PATH}" ]] || fail "build did not produce a regular app bundle"
 
-plutil -create json "${PROVENANCE_PATH}"
-plutil -insert tag -string "${TAG}" "${PROVENANCE_PATH}"
-plutil -insert wrapper_commit -string "${WRAPPER_COMMIT}" "${PROVENANCE_PATH}"
-plutil -insert agent_commit -string "${AGENT_COMMIT}" "${PROVENANCE_PATH}"
+write_release_provenance "${PROVENANCE_PATH}" "${TAG}" "${WRAPPER_COMMIT}" "${AGENT_COMMIT}" "${TEMP_ROOT}" \
+  || fail "writing release provenance failed"
 chmod 0644 "${PROVENANCE_PATH}"
 xattr -cr "${APP_PATH}"
 

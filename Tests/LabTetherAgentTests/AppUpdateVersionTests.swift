@@ -31,9 +31,11 @@ final class AppUpdateVersionTests: XCTestCase {
         func release(_ fields: String) -> AppUpdateRelease? {
             AppUpdateRelease.parse(Data("{\(fields)}".utf8))
         }
-        let official = "https://github.com/labtether/labtether-mac/releases/tag/v1.8.0"
-        let stable = try XCTUnwrap(release(#""tag_name":"v1.8.0","html_url":"\#(official)","draft":false,"prerelease":false"#))
-        XCTAssertEqual(stable, AppUpdateRelease(version: "1.8.0", pageURL: URL(string: official)!))
+        let official = "https://github.com/labtether/labtether-mac/releases/tag/v2.0.0"
+        let stable = try XCTUnwrap(release(#""tag_name":"v2.0.0","html_url":"\#(official)","draft":false,"prerelease":false"#))
+        XCTAssertEqual(stable, AppUpdateRelease(version: "2.0.0", pageURL: URL(string: official)!))
+        // The installed 1.7.1 app must offer this release.
+        XCTAssertTrue(AppVersion.isNewer(stable.version, than: "1.7.1"))
 
         XCTAssertNil(release(#""tag_name":"v1.8.0","prerelease":true"#))
         XCTAssertNil(release(#""tag_name":"v1.8.0","draft":true"#))

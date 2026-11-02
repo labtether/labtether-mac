@@ -8,13 +8,14 @@ LOCAL_PREPARE="${SCRIPT_DIR}/release-local.sh"
 LOCAL_PUBLISH="${SCRIPT_DIR}/publish-local-release.sh"
 LOCAL_VERIFY="${SCRIPT_DIR}/verify-release-archive.sh"
 LOCAL_READBACK="${SCRIPT_DIR}/release-readback-common.sh"
+LOCAL_PROVENANCE="${SCRIPT_DIR}/release-provenance.sh"
 
 fail() {
   printf 'release policy check failed: %s\n' "$1" >&2
   exit 1
 }
 
-for script_path in "${LOCAL_PREPARE}" "${LOCAL_PUBLISH}" "${LOCAL_VERIFY}" "${LOCAL_READBACK}" "${BASH_SOURCE[0]}"; do
+for script_path in "${LOCAL_PREPARE}" "${LOCAL_PUBLISH}" "${LOCAL_VERIFY}" "${LOCAL_READBACK}" "${LOCAL_PROVENANCE}" "${BASH_SOURCE[0]}"; do
   bash -n "${script_path}" || fail "a release script has invalid shell syntax"
 done
 
@@ -168,6 +169,23 @@ if github_release_by_tag labtether/labtether-mac "${TAG}" >/dev/null 2>&1; then
   fail "release lookup accepted an unexpected GitHub response"
 fi
 unset -f gh
+
+# The v1.7.1 signed path stopped here on macOS 27.2: plutil could not insert
+# keys into a JSON file. Write provenance on this host and read it back the
+# way verify-release-archive.sh does.
+# shellcheck source=scripts/release-provenance.sh
+source "${LOCAL_PROVENANCE}"
+provenance_dir="$(mktemp -d "${TMPDIR:-/tmp}/labtether-provenance-check.XXXXXX")"
+provenance_wrapper="1111111111111111111111111111111111111111"
+provenance_agent="2222222222222222222222222222222222222222"
+write_release_provenance "${provenance_dir}/release-provenance.json" "${TAG}" \
+  "${provenance_wrapper}" "${provenance_agent}" "${provenance_dir}" \
+  || fail "release provenance could not be written on this host"
+[[ "$(plutil -extract tag raw "${provenance_dir}/release-provenance.json")" == "${TAG}" \
+  && "$(plutil -extract wrapper_commit raw "${provenance_dir}/release-provenance.json")" == "${provenance_wrapper}" \
+  && "$(plutil -extract agent_commit raw "${provenance_dir}/release-provenance.json")" == "${provenance_agent}" ]] \
+  || fail "release provenance did not read back"
+rm -rf "${provenance_dir}"
 
 bash "${SCRIPT_DIR}/test-release-source-policy.sh"
 

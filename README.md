@@ -35,8 +35,8 @@ tells you whether it is connected.
 3. Launch it. The menu bar icon walks you through connecting to your hub.
 
 You need macOS 13 (Ventura) or newer, a running hub, and an enrollment token
-from the hub (**Add Device**). The app is signed and notarized by Apple. To
-check the download yourself first, see
+from the hub (**Add device** on the Devices page). The app is signed and
+notarized by Apple. To check the download yourself first, see
 [docs/verify-download.md](docs/verify-download.md).
 
 ## Uninstall
