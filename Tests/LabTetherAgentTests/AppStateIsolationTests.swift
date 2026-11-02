@@ -157,14 +157,50 @@ final class AppStateIsolationTests: XCTestCase {
         XCTAssertTrue(other.isRunning)
     }
 
+    /// Risk: an app in a temporary folder, or one macOS runs from a
+    /// translocated copy (opened from Downloads), never starts its agent core,
+    /// because the kernel reports /private/var/... and Foundation drops /private.
     @MainActor
-    private func makeOwner(_ settings: AgentSettings, record: @escaping (Process) -> Void) -> AgentProcess {
+    func testChildStartsFromABinaryUnderPrivateVar() throws {
+        let state = try PrivateStateFixture()
+        defer { state.cleanup() }
+        // The per-user temp folder, where macOS also puts translocated apps.
+        var buffer = [CChar](repeating: 0, count: Int(PATH_MAX))
+        let userTemp = confstr(_CS_DARWIN_USER_TEMP_DIR, &buffer, buffer.count) > 0
+            ? String(cString: buffer) : NSTemporaryDirectory()
+        let folder = URL(fileURLWithPath: userTemp).appendingPathComponent("lt-bin-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let copy = folder.appendingPathComponent("labtether-agent")
+        try FileManager.default.copyItem(atPath: "/bin/sleep", toPath: copy.path)
+        let real = try XCTUnwrap(realpath(copy.path, nil))
+        let resolved = String(cString: real)
+        free(real)
+        try XCTSkipUnless(resolved.hasPrefix("/private/"), "temporary folder is not under /private here")
+        let settings = try AgentSettings(location: state.location)
+        try state.location.write(Data("token\n".utf8), name: "agent-token")
+        for spelling in [resolved, String(resolved.dropFirst("/private".count))] {
+            var children: [Process] = []
+            let owner = makeOwner(settings, binary: spelling) { children.append($0) }
+            owner.start()
+            let child = try XCTUnwrap(children.first)
+            XCTAssertTrue(owner.isRunning, "agent core did not start from \(spelling)")
+            child.terminationHandler = nil
+            owner.forceKill()
+            if child.isRunning { kill(child.processIdentifier, SIGKILL) }
+            child.waitUntilExit()
+        }
+    }
+
+    @MainActor
+    private func makeOwner(_ settings: AgentSettings, binary: String = "/bin/sleep",
+                           record: @escaping (Process) -> Void) -> AgentProcess {
         AgentProcess(status: AgentStatus(), settings: settings,
                      notifications: NotificationManager(requestAuthorization: false, allowSystemIntegration: false),
                      logBuffer: LogBuffer(),
                      sessionHistory: SessionHistoryTracker(filePath: settings.appSupportDirectory.appendingPathComponent("history.json").path),
                      makeProcess: { let child = Process(); child.arguments = ["30"]; record(child); return child },
-                     agentBinaryPath: { "/bin/sleep" })
+                     agentBinaryPath: { binary })
     }
 }
 
