@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/). The older
 `2026.1` entry predates the switch from calendar versions.
 
+## [2.0.0] - unreleased
+
+The version moves to 2.0.0 with the LabTether 2.0 release. The bundled agent
+core is `labtether-agent v2.0.0`.
+
+### Changed
+- The enrollment token hint in setup points to **Add device** on the Hub's
+  Devices page.
+
+### Fixed
+- The signed release script no longer stops while writing the release record
+  on macOS 27.2, where `plutil` cannot add keys to a JSON file.
+
 ## [1.7.1] - 2026-10-31
 
 Changes since the last public release, v1.4.0. v1.7.0 was tagged but never
@@ -109,5 +122,6 @@ released.
 - Gated all repeatForever animations on popover visibility to eliminate idle CPU usage
 - @Sendable annotation and unused result warning in ConnectionTester
 
+[2.0.0]: https://github.com/labtether/labtether-mac/releases/tag/v2.0.0
 [1.7.1]: https://github.com/labtether/labtether-mac/releases/tag/v1.7.1
 [2026.1]: https://github.com/labtether/labtether-mac/releases/tag/v2026.1
