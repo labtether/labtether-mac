@@ -22,6 +22,10 @@ core is `labtether-agent v2.0.0`.
   console. With the Hub URL that Add device shows (the Hub API port, 8443)
   they opened the API's JSON reply instead. The app now asks the Hub which
   console to open each time it connects.
+- The app starts its agent core when it runs from a folder under /private,
+  such as the copy macOS runs when the app is opened from Downloads without
+  moving it first. It used to stop the core it had started and show
+  "Failed to launch".
 
 ## [1.7.1] - 2026-10-31
 
