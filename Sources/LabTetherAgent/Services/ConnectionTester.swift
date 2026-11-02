@@ -278,7 +278,7 @@ enum ConnectionTester {
 
     // MARK: - Private helpers
 
-    private struct HubProbeResponse {
+    struct HubProbeResponse {
         let statusCode: Int
         let expectedContentLength: Int64
         let body: Data
@@ -336,7 +336,7 @@ enum ConnectionTester {
         return nil
     }
 
-    private static func probeHub(
+    static func probeHub(
         url: URL,
         tlsSkipVerify: Bool,
         tlsCAFile: String
