@@ -331,10 +331,16 @@ final class AgentSettings: ObservableObject {
         appSupportDirectory.appendingPathComponent("device-fingerprint").path
     }
 
-    /// Derive HTTP console URL from the configured WebSocket URL.
-    /// Preserves the user's explicit port; defaults to 3000 only if no port is specified.
+    /// The console the Hub named for `hubConsoleSource` (see HubConsoleLocator).
+    @Published var hubConsoleURL: URL?
+    var hubConsoleSource: String?
+
+    /// The web console for the configured Hub. Uses the console the Hub
+    /// named for this exact Hub URL; otherwise the Hub URL's own origin,
+    /// with port 3000 only when the URL has no port.
     var consoleURL: URL? {
         guard let wsURL = normalizedHubWebSocketURL() else { return nil }
+        if let hubConsoleURL, hubConsoleSource == wsURL { return hubConsoleURL }
         var urlString = wsURL
         urlString = urlString.replacingOccurrences(of: "ws://", with: "http://")
         urlString = urlString.replacingOccurrences(of: "wss://", with: "https://")

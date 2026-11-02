@@ -37,6 +37,7 @@ final class AppState: ObservableObject {
     private var apiAlertsObserver: AnyCancellable?
     private var popOutVisibilityObserver: AnyCancellable?
     private var statusObserver: AnyCancellable?
+    private var consoleLookupObserver: AnyCancellable?
     private var settingsObserver: AnyCancellable?
     private var performanceControlObserver: NSObjectProtocol?
     private var pendingMenuBarLabelRefresh = false
@@ -119,6 +120,14 @@ final class AppState: ObservableObject {
         statusObserver = status.objectWillChange
             .sink { [weak self] _ in
                 self?.scheduleMenuBarLabelRefreshIfNeeded()
+            }
+
+        // Open Console needs the console the Hub names, not the API origin.
+        consoleLookupObserver = status.$state
+            .removeDuplicates()
+            .filter { $0 == .connected }
+            .sink { [weak self] _ in
+                self?.settings.refreshHubConsoleURL()
             }
 
         settingsObserver = settings.objectWillChange

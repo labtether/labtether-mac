@@ -18,6 +18,10 @@ core is `labtether-agent v2.0.0`.
 ### Fixed
 - The signed release script no longer stops while writing the release record
   on macOS 27.2, where `plutil` cannot add keys to a JSON file.
+- **Open Console**, the device link and the alert links open the Hub's web
+  console. With the Hub URL that Add device shows (the Hub API port, 8443)
+  they opened the API's JSON reply instead. The app now asks the Hub which
+  console to open each time it connects.
 
 ## [1.7.1] - 2026-10-31
 
