@@ -16,32 +16,38 @@ enum AgentNotification {
 
     var title: String {
         switch self {
-        case .connected:              return "LabTether Agent Connected"
-        case .disconnected:           return "LabTether Agent Disconnected"
-        case .enrolled:               return "LabTether Agent Enrolled"
-        case .connectionLost:         return "LabTether Connection Lost"
-        case .screenSharingDisabled:  return "Screen Sharing Not Enabled"
-        case .screenSharingObserveOnly: return "Screen Sharing: Observe Only"
-        case .crashRestart:           return "LabTether Agent Restarting"
-        case .crashLoopDetected:      return "LabTether Agent Crash Loop"
-        case .alertFiring(let title, _): return "Alert: \(title)"
-        case .alertResolved:          return "Alert Resolved"
+        case .connected:                 return "LabTether connected"
+        case .disconnected:              return "LabTether stopped"
+        case .enrolled:                  return "LabTether enrolled"
+        case .connectionLost:            return "Hub connection lost"
+        case .screenSharingDisabled:     return "Screen Sharing is off"
+        case .screenSharingObserveOnly:  return "Screen Sharing is observe only"
+        case .crashRestart:              return "LabTether agent restarting"
+        case .crashLoopDetected:         return "LabTether agent stopped"
+        case .alertFiring(let title, _): return title
+        case .alertResolved:             return "Alert resolved"
         }
     }
 
     var body: String {
         switch self {
-        case .connected:              return "Successfully connected to the hub."
-        case .disconnected:           return "Agent process has stopped."
-        case .enrolled:               return "Agent has been enrolled with the hub."
-        case .connectionLost:         return "Connection to hub lost. Attempting to reconnect..."
-        case .screenSharingDisabled:  return "Enable Screen Sharing in System Settings to allow remote desktop access from the web console."
-        case .screenSharingObserveOnly: return "Screen Sharing is in observe-only mode. Remote mouse and keyboard input will not work. Grant control access to fix this."
-        case .crashRestart(let n):    return "Agent crashed unexpectedly. Auto-restarting (attempt \(n))..."
-        case .crashLoopDetected:      return "Agent has crashed repeatedly. Auto-restart disabled. Check logs and restart manually."
-        case .alertFiring(let title, let severity): return "[\(severity.uppercased())] \(title)"
-        case .alertResolved(let title): return "\(title) is back to normal."
+        case .connected:                return "Connected to the Hub."
+        case .disconnected:             return "The agent process stopped."
+        case .enrolled:                 return "This Mac is enrolled with the Hub."
+        case .connectionLost:           return "Reconnecting."
+        case .screenSharingDisabled:    return "Remote View needs Screen Sharing. Turn it on in System Settings > General > Sharing."
+        case .screenSharingObserveOnly: return "Remote mouse and keyboard input is off."
+        case .crashRestart(let n):      return "The agent quit unexpectedly. Restart \(n) is starting."
+        case .crashLoopDetected:        return "The agent quit several times in a row, so it was not restarted."
+        case .alertFiring(_, let severity): return "\(Self.severityWord(severity)) alert"
+        case .alertResolved(let title): return title
         }
+    }
+
+    private static func severityWord(_ severity: String) -> String {
+        let word = severity.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let first = word.first else { return "New" }
+        return first.uppercased() + word.dropFirst().lowercased()
     }
 }
 

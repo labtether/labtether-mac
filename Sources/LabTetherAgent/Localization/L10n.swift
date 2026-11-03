@@ -56,66 +56,83 @@ enum L10n {
         NSLocalizedString("status.enrolling", bundle: bundle, comment: "")
     }
 
-    /// "Auth Failed" / "Autenticación fallida"
+    /// "Token refused" / "Token rechazado"
     static var authFailed: String {
         NSLocalizedString("status.auth_failed", bundle: bundle, comment: "")
     }
 
-    /// "Status Unavailable" / "Estado no disponible"
+    /// "Status unavailable" / "Estado no disponible"
     static var statusUnavailable: String {
         NSLocalizedString("status.unavailable", bundle: bundle, comment: "")
     }
 
     // MARK: - Menu Bar Quick Actions
 
-    /// "Open Web Console" / "Abrir consola web"
+    /// "Open web console" / "Abrir consola web"
     static var menuOpenConsole: String {
         NSLocalizedString("menu.open_console", bundle: bundle, comment: "")
     }
 
-    /// "View This Device" / "Ver este dispositivo"
+    /// "Open device page" / "Abrir página del dispositivo"
     static var menuViewDevice: String {
         NSLocalizedString("menu.view_device", bundle: bundle, comment: "")
     }
 
-    /// "Pop Out Window" / "Ventana emergente"
+    /// "Pop out" / "Ventana flotante"
     static var menuPopOut: String {
         NSLocalizedString("menu.pop_out", bundle: bundle, comment: "")
     }
 
-    /// "View Logs" / "Ver registros"
+    /// "View logs" / "Ver registros"
     static var menuViewLogs: String {
         NSLocalizedString("menu.view_logs", bundle: bundle, comment: "")
     }
 
-    /// "Copy Diagnostics" / "Copiar diagnósticos"
+    /// "Copy diagnostics" / "Copiar diagnósticos"
     static var menuCopyDiagnostics: String {
         NSLocalizedString("menu.copy_diagnostics", bundle: bundle, comment: "")
     }
 
-    /// "Test Connection" / "Probar conexión"
+    /// "Test connection" / "Probar conexión"
     static var menuTestConnection: String {
         NSLocalizedString("menu.test_connection", bundle: bundle, comment: "")
     }
 
-    /// "Settings" / "Configuración"
+    /// "Settings…" / "Ajustes…"
     static var menuSettings: String {
         NSLocalizedString("menu.settings", bundle: bundle, comment: "")
     }
 
+    // MARK: - Menu Bar Window
+
+    /// "Alerts" / "Alertas"
+    static var menuAlerts: String {
+        NSLocalizedString("menu.alerts", bundle: bundle, comment: "")
+    }
+
+    /// "Update available" / "Actualización disponible"
+    static var menuUpdateAvailable: String {
+        NSLocalizedString("menu.update_available", bundle: bundle, comment: "")
+    }
+
+    /// "Quit" / "Salir"
+    static var menuQuit: String {
+        NSLocalizedString("menu.quit", bundle: bundle, comment: "")
+    }
+
     // MARK: - Menu Bar Footer
 
-    /// "About" / "Acerca de"
+    /// "About LabTether" / "Acerca de LabTether"
     static var menuAbout: String {
         NSLocalizedString("menu.about", bundle: bundle, comment: "")
     }
 
-    /// "Setup Wizard" / "Asistente de configuración"
+    /// "Run setup again" / "Volver a configurar"
     static var menuSetupWizard: String {
         NSLocalizedString("menu.setup_wizard", bundle: bundle, comment: "")
     }
 
-    /// "Reset & Uninstall..." / "Restablecer y desinstalar..."
+    /// "Reset and uninstall…" / "Restablecer y desinstalar…"
     static var menuUninstall: String {
         NSLocalizedString("menu.uninstall", bundle: bundle, comment: "")
     }
@@ -139,37 +156,37 @@ enum L10n {
 
     // MARK: - Settings Connection
 
-    /// "HUB URL" / "URL DEL HUB"
+    /// "Hub address" / "Dirección del Hub"
     static var settingsHubURL: String {
         NSLocalizedString("settings.hub_url", bundle: bundle, comment: "")
     }
 
-    /// "API TOKEN" / "TOKEN DE API"
+    /// "API token" / "Token de API"
     static var settingsAPIToken: String {
         NSLocalizedString("settings.api_token", bundle: bundle, comment: "")
     }
 
-    /// "ENROLLMENT TOKEN" / "TOKEN DE INSCRIPCIÓN"
+    /// "Enrollment token" / "Token de inscripción"
     static var settingsEnrollmentToken: String {
         NSLocalizedString("settings.enrollment_token", bundle: bundle, comment: "")
     }
 
-    /// "ASSET ID" / "ID DE ACTIVO"
+    /// "Asset ID" / "ID de activo"
     static var settingsAssetID: String {
         NSLocalizedString("settings.asset_id", bundle: bundle, comment: "")
     }
 
-    /// "GROUP ID" / "ID DE GRUPO"
+    /// "Group ID" / "ID de grupo"
     static var settingsGroupID: String {
         NSLocalizedString("settings.group_id", bundle: bundle, comment: "")
     }
 
-    /// "Test Connection" / "Probar conexión"
+    /// "Test connection" / "Probar conexión"
     static var settingsTestConnection: String {
         NSLocalizedString("settings.test_connection", bundle: bundle, comment: "")
     }
 
-    /// "Full Diagnostics..." / "Diagnósticos completos..."
+    /// "Diagnostics…" / "Diagnósticos…"
     static var settingsFullDiagnostics: String {
         NSLocalizedString("settings.full_diagnostics", bundle: bundle, comment: "")
     }
@@ -189,64 +206,39 @@ enum L10n {
         NSLocalizedString("settings.restart", bundle: bundle, comment: "")
     }
 
-    /// "Restart Required" / "Reinicio requerido"
+    /// "Restart to apply changes" / "Reinicia para aplicar los cambios"
     static var settingsRestartRequired: String {
         NSLocalizedString("settings.restart_required", bundle: bundle, comment: "")
     }
 
     // MARK: - Onboarding
 
-    /// "Welcome to LabTether" / "Bienvenido a LabTether"
+    /// "Connect this Mac to your Hub" / "Conecta este Mac a tu Hub"
     static var onboardingWelcomeTitle: String {
         NSLocalizedString("onboarding.welcome_title", bundle: bundle, comment: "")
     }
 
-    /// Multi-line subtitle for the welcome step.
+    /// "The address and a token are in the Hub under Settings › Agents." / "La dirección y un token están en el Hub, en Settings › Agents."
     static var onboardingWelcomeSubtitle: String {
         NSLocalizedString("onboarding.welcome_subtitle", bundle: bundle, comment: "")
     }
 
-    /// "Authentication" / "Autenticación"
-    static var onboardingAuthTitle: String {
-        NSLocalizedString("onboarding.auth_title", bundle: bundle, comment: "")
+    /// "Token" / "Token"
+    static var onboardingToken: String {
+        NSLocalizedString("onboarding.token", bundle: bundle, comment: "")
     }
 
-    /// Multi-line subtitle for the authentication step.
-    static var onboardingAuthSubtitle: String {
-        NSLocalizedString("onboarding.auth_subtitle", bundle: bundle, comment: "")
+    /// "Advanced" / "Avanzado"
+    static var onboardingAdvanced: String {
+        NSLocalizedString("onboarding.advanced", bundle: bundle, comment: "")
     }
 
-    /// "Identity (Optional)" / "Identidad (Opcional)"
-    static var onboardingIdentityTitle: String {
-        NSLocalizedString("onboarding.identity_title", bundle: bundle, comment: "")
-    }
-
-    /// Multi-line subtitle for the identity step.
-    static var onboardingIdentitySubtitle: String {
-        NSLocalizedString("onboarding.identity_subtitle", bundle: bundle, comment: "")
-    }
-
-    /// "Next" / "Siguiente"
-    static var onboardingNext: String {
-        NSLocalizedString("onboarding.next", bundle: bundle, comment: "")
-    }
-
-    /// "Back" / "Atrás"
-    static var onboardingBack: String {
-        NSLocalizedString("onboarding.back", bundle: bundle, comment: "")
-    }
-
-    /// "Finish & Start Agent" / "Finalizar e iniciar agente"
+    /// "Connect" / "Conectar"
     static var onboardingFinish: String {
         NSLocalizedString("onboarding.finish", bundle: bundle, comment: "")
     }
 
-    /// "Skip" / "Omitir"
-    static var onboardingSkip: String {
-        NSLocalizedString("onboarding.skip", bundle: bundle, comment: "")
-    }
-
-    /// "Paste from Clipboard" / "Pegar del portapapeles"
+    /// "Paste" / "Pegar"
     static var onboardingPasteClipboard: String {
         NSLocalizedString("onboarding.paste_clipboard", bundle: bundle, comment: "")
     }
@@ -263,12 +255,12 @@ enum L10n {
         NSLocalizedString("about.version", bundle: bundle, comment: "")
     }
 
-    /// "Agent:" / "Agente:"
+    /// "Agent" / "Agente"
     static var aboutAgent: String {
         NSLocalizedString("about.agent", bundle: bundle, comment: "")
     }
 
-    /// "Not running" / "No ejecutándose"
+    /// "not running" / "no se está ejecutando"
     static var aboutNotRunning: String {
         NSLocalizedString("about.not_running", bundle: bundle, comment: "")
     }
@@ -290,27 +282,27 @@ enum L10n {
 
     // MARK: - Session History
 
-    /// "SESSION HISTORY" / "HISTORIAL DE SESIONES"
+    /// "Sessions" / "Sesiones"
     static var sessionTitle: String {
         NSLocalizedString("session.title", bundle: bundle, comment: "")
     }
 
-    /// "No sessions recorded yet" / "No se han registrado sesiones aún"
+    /// "No sessions yet" / "Aún no hay sesiones"
     static var sessionEmpty: String {
         NSLocalizedString("session.empty", bundle: bundle, comment: "")
     }
 
-    /// "Clear History" / "Borrar historial"
+    /// "Clear" / "Borrar"
     static var sessionClear: String {
         NSLocalizedString("session.clear", bundle: bundle, comment: "")
     }
 
-    /// "Clear Session History?" / "¿Borrar historial de sesiones?"
+    /// "Clear session history?" / "¿Borrar el historial de sesiones?"
     static var sessionClearTitle: String {
         NSLocalizedString("session.clear_title", bundle: bundle, comment: "")
     }
 
-    /// "This will remove all recorded session events." / "Esto eliminará todos los eventos de sesión registrados."
+    /// "This removes all recorded sessions." / "Se eliminarán todas las sesiones registradas."
     static var sessionClearMessage: String {
         NSLocalizedString("session.clear_message", bundle: bundle, comment: "")
     }
@@ -327,12 +319,12 @@ enum L10n {
 
     // MARK: - Bandwidth
 
-    /// "BANDWIDTH" / "ANCHO DE BANDA"
+    /// "Bandwidth" / "Ancho de banda"
     static var bandwidthTitle: String {
         NSLocalizedString("bandwidth.title", bundle: bundle, comment: "")
     }
 
-    /// "This Session" / "Esta sesión"
+    /// "This session" / "Esta sesión"
     static var bandwidthThisSession: String {
         NSLocalizedString("bandwidth.this_session", bundle: bundle, comment: "")
     }
@@ -342,19 +334,19 @@ enum L10n {
         NSLocalizedString("bandwidth.today", bundle: bundle, comment: "")
     }
 
-    /// "Last 30 Days" / "Últimos 30 días"
+    /// "Last 30 days" / "Últimos 30 días"
     static var bandwidthLast30Days: String {
         NSLocalizedString("bandwidth.last_30_days", bundle: bundle, comment: "")
     }
 
-    /// Empty state message shown before bandwidth data is available.
+    /// "No bandwidth data yet" / "Aún no hay datos de ancho de banda"
     static var bandwidthEmpty: String {
         NSLocalizedString("bandwidth.empty", bundle: bundle, comment: "")
     }
 
     // MARK: - Connection Diagnostics
 
-    /// "Connection Diagnostics" / "Diagnósticos de conexión"
+    /// "Connection diagnostics" / "Diagnóstico de conexión"
     static var diagnosticsTitle: String {
         NSLocalizedString("diagnostics.title", bundle: bundle, comment: "")
     }
@@ -364,7 +356,7 @@ enum L10n {
         NSLocalizedString("diagnostics.run", bundle: bundle, comment: "")
     }
 
-    /// "Re-run" / "Re-ejecutar"
+    /// "Run again" / "Ejecutar de nuevo"
     static var diagnosticsRerun: String {
         NSLocalizedString("diagnostics.rerun", bundle: bundle, comment: "")
     }
@@ -374,44 +366,44 @@ enum L10n {
         NSLocalizedString("diagnostics.close", bundle: bundle, comment: "")
     }
 
-    /// "Copy Results" / "Copiar resultados"
+    /// "Copy results" / "Copiar resultados"
     static var diagnosticsCopyResults: String {
         NSLocalizedString("diagnostics.copy_results", bundle: bundle, comment: "")
     }
 
-    /// "DNS Resolution" / "Resolución DNS"
+    /// "DNS lookup" / "Búsqueda DNS"
     static var diagnosticsDNS: String {
         NSLocalizedString("diagnostics.dns", bundle: bundle, comment: "")
     }
 
-    /// "TCP Connection" / "Conexión TCP"
+    /// "TCP connection" / "Conexión TCP"
     static var diagnosticsTCP: String {
         NSLocalizedString("diagnostics.tcp", bundle: bundle, comment: "")
     }
 
-    /// "TLS Handshake" / "Negociación TLS"
+    /// "TLS handshake" / "Negociación TLS"
     static var diagnosticsTLS: String {
         NSLocalizedString("diagnostics.tls", bundle: bundle, comment: "")
     }
 
-    /// "HTTP Reachability" / "Accesibilidad HTTP"
+    /// "HTTP reachability" / "Accesibilidad HTTP"
     static var diagnosticsHTTP: String {
         NSLocalizedString("diagnostics.http", bundle: bundle, comment: "")
     }
 
     // MARK: - Uninstall
 
-    /// "Uninstall LabTether Agent?" / "¿Desinstalar agente LabTether?"
+    /// "Uninstall LabTether?" / "¿Desinstalar LabTether?"
     static var uninstallTitle: String {
         NSLocalizedString("uninstall.title", bundle: bundle, comment: "")
     }
 
-    /// Destructive action description shown in the uninstall alert.
+    /// "This removes all settings, tokens and history, then quits the app." / "Se eliminarán todos los ajustes, tokens e historial y la app se cerrará."
     static var uninstallMessage: String {
         NSLocalizedString("uninstall.message", bundle: bundle, comment: "")
     }
 
-    /// "Uninstall & Quit" / "Desinstalar y salir"
+    /// "Uninstall and quit" / "Desinstalar y salir"
     static var uninstallConfirm: String {
         NSLocalizedString("uninstall.confirm", bundle: bundle, comment: "")
     }

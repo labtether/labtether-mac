@@ -160,7 +160,7 @@ final class AppState: ObservableObject {
                 }
             } else {
                 debugBoot("Auto-start skipped: settings not configured")
-                status.markError("Not configured — open Settings to set Hub URL and token")
+                status.markError("Not set up. Add the Hub address and a token in Settings.")
             }
         } else {
             debugBoot("Auto-start disabled")
@@ -233,7 +233,8 @@ final class AppState: ObservableObject {
             hubConnectionState: apiClient.hubConnectionState,
             isReachable: apiClient.isReachable,
             metrics: apiClient.metrics.snapshot.current,
-            hasFiringAlerts: !apiClient.alerts.snapshot.firingAlerts.isEmpty
+            hasFiringAlerts: !apiClient.alerts.snapshot.firingAlerts.isEmpty,
+            hasCriticalAlert: apiClient.alerts.snapshot.hasCriticalFiring
         )
     }
 

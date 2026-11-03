@@ -12,8 +12,27 @@ The version moves to 2.0.0 with the LabTether 2.0 release. The bundled agent
 core is `labtether-agent v2.0.0`.
 
 ### Changed
-- The enrollment token hint in setup points to **Add device** on the Hub's
-  Devices page.
+- The app uses the LabTether 2.0 look: the Hub console's light and dark
+  colours, following the system appearance, the system font, and plain sheets
+  in place of glass cards, glows and icon boxes. Text meets WCAG AA contrast.
+- The menu bar icon is drawn from the mascot. It shows a dot only when
+  something needs attention: amber for an alert or high usage, red for a
+  critical alert or a refused token. Starting, offline and stopped dim it.
+- The menu bar window shows status, usage once, alerts, actions and one
+  footer line with the version and "Update available".
+- The pop-out lists alerts first, then usage, recent events, bandwidth,
+  sessions and Remote View. Agent controls are in its ⋯ menu.
+- Setup is one window: Hub address, token, test and Connect. Asset ID and
+  group ID are under Advanced.
+- Settings opens on the agent's status, then the Hub form. Asset ID and group
+  ID are under Identity; paths, process ID and fingerprint are under
+  Advanced › Diagnostics.
+- Status reads as a word plus a time, for example "Stopped · since 21:12".
+  Notifications and messages use plain wording.
+- The quick connection test shows "Reachable · 24 ms" instead of copying
+  the result to the clipboard.
+- The setup hint points to **Settings › Agents** in the Hub, where the
+  address and enrollment tokens are.
 
 ### Fixed
 - The signed release script no longer stops while writing the release record

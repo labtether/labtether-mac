@@ -1,117 +1,126 @@
 import SwiftUI
 
-// MARK: - LTPillButton
+// MARK: - Button styles
 
-/// An accent-coloured capsule button with hover brightening, press-scale feedback, and glow shadow.
-struct LTPillButton: View {
-    let title: String
-    let icon: String
-    let color: Color
-    let action: () -> Void
+/// Secondary button: control fill, hairline ring, primary text.
+struct LTSecondaryButtonStyle: ButtonStyle {
+    var height: CGFloat = 28
+    var fontSize: CGFloat = 13
+    @Environment(\.isEnabled) private var isEnabled
 
-    @State private var isHovered = false
-
-    init(_ title: String, icon: String, color: Color = LT.accent, action: @escaping () -> Void) {
-        self.title = title
-        self.icon = icon
-        self.color = color
-        self.action = action
-    }
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: LT.space4) {
-                Image(systemName: icon)
-                    .font(.system(size: 10, weight: .semibold))
-                Text(title)
-                    .font(LT.inter(11, weight: .semibold))
-            }
-            .foregroundStyle(color)
-            .padding(.horizontal, LT.space12)
-            .padding(.vertical, LT.space4 + 2)
-            .background(
-                Capsule()
-                    .fill(color.opacity(isHovered ? 0.22 : 0.14))
-            )
-            .overlay(
-                Capsule()
-                    .strokeBorder(color.opacity(0.35), lineWidth: 1)
-            )
-            .shadow(color: color.opacity(isHovered ? 0.4 : 0.2), radius: isHovered ? 10 : 4)
-        }
-        .buttonStyle(LTPressButtonStyle())
-        .onHover { isHovered = $0 }
-        .animation(.easeInOut(duration: LT.animFast), value: isHovered)
-    }
-}
-
-/// Press-scale button style providing tactile press-down feedback.
-struct LTPressButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? LT.pressScale : 1.0)
-            .opacity(configuration.isPressed ? 0.85 : 1.0)
-            .animation(LT.springSnappy, value: configuration.isPressed)
+            .font(LT.font(fontSize, weight: .medium))
+            .foregroundStyle(LT.text)
+            .lineLimit(1)
+            .padding(.horizontal, fontSize < 13 ? 10 : 12)
+            .frame(height: height)
+            .background(
+                RoundedRectangle(cornerRadius: LT.radiusRow, style: .continuous)
+                    .fill(configuration.isPressed ? LTTokens.Colors.ctlPress : LTTokens.Colors.ctlBg)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: LT.radiusRow, style: .continuous)
+                    .strokeBorder(LTTokens.Colors.ring, lineWidth: 1)
+            )
+            .opacity(isEnabled ? 1 : 0.45)
+            .contentShape(Rectangle())
     }
 }
 
-// MARK: - LTIconBox
+/// The one rose button of a window.
+struct LTPrimaryButtonStyle: ButtonStyle {
+    var height: CGFloat = 28
+    var radius: CGFloat = LT.radiusRow
+    @Environment(\.isEnabled) private var isEnabled
 
-/// A rounded-rect icon container with a tinted background, used for section heroes
-/// and leading indicators in cards.
-struct LTIconBox: View {
-    let icon: String
-    var color: Color = LT.accent
-    var size: CGFloat = 28
-
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: LT.radiusSm, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [color.opacity(0.18), color.opacity(0.08)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .frame(width: size, height: size)
-                .shadow(color: color.opacity(0.2), radius: 3, y: 1)
-            Image(systemName: icon)
-                .font(.system(size: size * 0.43, weight: .semibold))
-                .foregroundStyle(color)
-        }
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(LT.font(13, weight: .medium))
+            .foregroundStyle(LT.accentContrast)
+            .lineLimit(1)
+            .padding(.horizontal, height > 28 ? 16 : 12)
+            .frame(height: height)
+            .background(
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .fill(configuration.isPressed ? LTTokens.Colors.rosePress : LT.accent)
+            )
+            .opacity(isEnabled ? 1 : 0.45)
+            .contentShape(Rectangle())
     }
 }
 
-// MARK: - LTMiniActionButton
+/// A text-only button in secondary text, used for small inline actions ("Paste", "Diagnostics…").
+struct LTTextButtonStyle: ButtonStyle {
+    var fontSize: CGFloat = 12
+    @Environment(\.isEnabled) private var isEnabled
 
-/// A compact circular icon button for inline agent controls (start/stop/restart).
-/// Renders as a 28x28 tinted circle with hover brightening and press-scale feedback.
-struct LTMiniActionButton: View {
-    let icon: String
-    let color: Color
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(LT.font(fontSize, weight: .medium))
+            .foregroundStyle(configuration.isPressed ? LT.text : LT.text2)
+            .opacity(isEnabled ? 1 : 0.45)
+            .contentShape(Rectangle())
+    }
+}
+
+// MARK: - LTQuietIconButton
+
+/// A borderless 28 pt icon button with a hover fill. Always carries an accessibility label.
+struct LTQuietIconButton: View {
+    let systemImage: String
+    let label: String
     let action: () -> Void
 
     @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(color)
+            Image(systemName: systemImage)
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(LT.text2)
                 .frame(width: 28, height: 28)
                 .background(
-                    Circle()
-                        .fill(color.opacity(isHovered ? 0.22 : 0.12))
+                    RoundedRectangle(cornerRadius: LT.radiusRow, style: .continuous)
+                        .fill(isHovered ? LT.hover : Color.clear)
                 )
-                .overlay(
-                    Circle()
-                        .strokeBorder(color.opacity(0.3), lineWidth: 0.5)
-                )
-                .shadow(color: color.opacity(isHovered ? 0.35 : 0.15), radius: isHovered ? 6 : 3)
+                .contentShape(Rectangle())
         }
-        .buttonStyle(LTPressButtonStyle())
+        .buttonStyle(.plain)
         .onHover { isHovered = $0 }
-        .animation(.easeInOut(duration: LT.animFast), value: isHovered)
+        .help(label)
+        .accessibilityLabel(label)
+    }
+}
+
+// MARK: - LTMoreMenu
+
+/// A "⋯" menu button. `bordered` draws it as a secondary control (pop-out header);
+/// otherwise it is quiet (menu bar footer).
+struct LTMoreMenu<Items: View>: View {
+    let label: String
+    var bordered = false
+    @ViewBuilder let items: () -> Items
+
+    var body: some View {
+        Menu(content: items) {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(LT.text2)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .frame(width: 28, height: 28)
+        .background(
+            RoundedRectangle(cornerRadius: LT.radiusRow, style: .continuous)
+                .fill(bordered ? LTTokens.Colors.ctlBg : Color.clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: LT.radiusRow, style: .continuous)
+                .strokeBorder(bordered ? LTTokens.Colors.ring : Color.clear, lineWidth: 1)
+        )
+        .help(label)
+        .accessibilityLabel(label)
     }
 }

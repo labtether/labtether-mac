@@ -162,6 +162,41 @@ final class MenuBarIconResolverTests: XCTestCase {
         XCTAssertEqual(presentation.kind, .error)
     }
 
+    // Risk: the menu bar glyph is the only signal while the window is closed.
+    // A firing alert or refused token must draw the dot (red only for critical
+    // or auth), and calm or stopped states must not draw one.
+    func testAttentionDotFollowsAlertSeverityAndConnectionState() {
+        func resolve(
+            hub: String = "connected",
+            state: ConnectionState = .connected,
+            reachable: Bool = true,
+            alerts: Bool = false,
+            critical: Bool = false
+        ) -> MenuBarIconKind {
+            MenuBarIconResolver.resolve(
+                statusState: state,
+                hubConnectionState: hub,
+                isReachable: reachable,
+                metrics: reachable ? makeMetrics(cpu: 12, memory: 34, disk: 56) : nil,
+                hasFiringAlerts: alerts,
+                hasCriticalAlert: critical
+            )
+        }
+
+        XCTAssertEqual(resolve(alerts: true).dot, .warn)
+        XCTAssertEqual(resolve(alerts: true, critical: true).dot, .bad)
+        XCTAssertEqual(resolve(hub: "auth_failed").dot, .bad)
+        XCTAssertEqual(resolve().dot, .none)
+        XCTAssertFalse(resolve().isDimmed)
+
+        let stopped = resolve(hub: "disconnected", state: .stopped, reachable: false)
+        XCTAssertEqual(stopped.dot, .none)
+        XCTAssertTrue(stopped.isDimmed)
+        let offline = resolve(hub: "disconnected")
+        XCTAssertEqual(offline.dot, .none)
+        XCTAssertTrue(offline.isDimmed)
+    }
+
     private func makeMetrics(cpu: Double, memory: Double, disk: Double) -> MetricsSnapshot {
         MetricsSnapshot(
             cpuPercent: cpu,

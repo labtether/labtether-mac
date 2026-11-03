@@ -1,217 +1,74 @@
 import SwiftUI
 
+/// Settings › Connection: the agent status sheet, then the Hub form, then Identity (collapsed).
 struct SettingsConnectionTab: View {
     @ObservedObject var settings: AgentSettings
     @ObservedObject var agentProcess: AgentProcess
     @ObservedObject var status: AgentStatus
-    @State private var showToken = false
-    @FocusState private var tokenFocused: Bool
+    @ObservedObject var runtime: LocalAPIRuntimeStore
     @State private var connectionTestResult: ConnectionTestResult?
     @State private var isTestingConnection = false
     @State private var showDiagnosticsSheet = false
+    @State private var showIdentity = false
 
     var body: some View {
-        LazyVStack(spacing: LT.space12) {
-            // Hub Connection card
-            SettingsCardSection("HUB CONNECTION") {
-                SettingsIconField(icon: "globe", label: "Hub URL",
-                                  text: $settings.hubURL,
-                                  prompt: "wss://localhost:8443/ws/agent",
-                                  onChange: { settings.markChanged() })
+        VStack(alignment: .leading, spacing: 0) {
+            SettingsAgentStatusSheet(
+                settings: settings,
+                agentProcess: agentProcess,
+                status: status,
+                runtime: runtime,
+                issue: validationIssues.first { !AgentSettingsValidator.isHubAddressIssue($0) }
+            )
+
+            SettingsSection("Hub") {
+                SettingsTextRow(
+                    label: L10n.settingsHubURL,
+                    text: $settings.hubURL,
+                    prompt: "hub.lan:8443",
+                    error: hubAddressError,
+                    onChange: { settings.markChanged() }
+                )
                 .accessibilityIdentifier("settings-hub-url")
 
-                // Test Connection row
-                HStack(spacing: LT.space8) {
-                    Button {
-                        Task {
-                            isTestingConnection = true
-                            connectionTestResult = nil
-                            connectionTestResult = await ConnectionTester.quickTest(
-                                hubURL: settings.hubURL,
-                                tlsSkipVerify: settings.tlsSkipVerify,
-                                tlsCAFile: settings.tlsCAFile
-                            )
-                            isTestingConnection = false
-                        }
-                    } label: {
-                        HStack(spacing: LT.space4) {
-                            if isTestingConnection {
-                                LTSpinnerArc(color: LT.accent, size: 11)
-                            } else {
-                                Image(systemName: "antenna.radiowaves.left.and.right")
-                                    .font(.system(size: 11))
-                            }
-                            Text(L10n.settingsTestConnection)
-                                .font(LT.inter(12))
-                        }
-                        .foregroundStyle(LT.accent)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isTestingConnection)
-                    .accessibilityIdentifier("settings-test-connection")
-                    .accessibilityHint("Tests connectivity to the hub server")
+                LTFormRow(label: "") { testRow }
 
-                    if let result = connectionTestResult {
-                        switch result {
-                        case .success(let responseTimeMs):
-                            HStack(spacing: LT.space4) {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(LT.ok)
-                                Text("\(responseTimeMs) ms")
-                                    .font(LT.mono(11))
-                                    .foregroundStyle(LT.textSecondary)
-                            }
-                        case .failure(let error):
-                            HStack(spacing: LT.space4) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundStyle(LT.bad)
-                                Text(error)
-                                    .font(LT.mono(11))
-                                    .foregroundStyle(LT.textSecondary)
-                                    .lineLimit(1)
-                            }
-                        }
-                    }
-
-                    Spacer()
-
-                    if connectionTestResult != nil {
-                        Button(L10n.settingsFullDiagnostics) {
-                            showDiagnosticsSheet = true
-                        }
-                        .buttonStyle(.plain)
-                        .font(LT.inter(11))
-                        .foregroundStyle(LT.textSecondary)
-                    }
-                }
-                .padding(.horizontal, LT.space12)
-                .padding(.vertical, 6)
-
-                HStack(spacing: LT.space8) {
-                    Image(systemName: "key.fill")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(tokenFocused ? LT.accent : LT.textMuted)
-                        .animation(.easeInOut(duration: LT.animFast), value: tokenFocused)
-                        .frame(width: 16)
-
-                    if showToken {
-                        TextField("API Token", text: $settings.apiToken,
-                                  prompt: Text("Agent token for this device").foregroundColor(LT.textMuted.opacity(0.5)))
-                            .textFieldStyle(.plain)
-                            .font(LT.inter(12))
-                            .foregroundStyle(LT.textPrimary)
-                            .focused($tokenFocused)
-                            .onChange(of: settings.apiToken) { _ in settings.markChanged() }
-                    } else {
-                        SecureField("API Token", text: $settings.apiToken,
-                                    prompt: Text("Agent token for this device").foregroundColor(LT.textMuted.opacity(0.5)))
-                            .textFieldStyle(.plain)
-                            .font(LT.inter(12))
-                            .foregroundStyle(LT.textPrimary)
-                            .focused($tokenFocused)
-                            .onChange(of: settings.apiToken) { _ in settings.markChanged() }
-                    }
-
-                    Button {
-                        showToken.toggle()
-                    } label: {
-                        Image(systemName: showToken ? "eye.slash.fill" : "eye.fill")
-                            .font(.system(size: 10))
-                            .foregroundStyle(LT.textMuted)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(showToken ? "Hide token" : "Show token")
-                }
-                .padding(.horizontal, LT.space12)
-                .padding(.vertical, 7)
-                .background(LT.panelGlass, in: RoundedRectangle(cornerRadius: LT.radiusSm, style: .continuous))
-                .ltFocusRing(tokenFocused)
-
-                SettingsSecureIconField(icon: "ticket.fill", label: "Enrollment Token",
-                                        text: $settings.enrollmentToken,
-                                        prompt: "Alternative to API token",
-                                        onChange: { settings.markChanged() })
+                SettingsSecretRow(
+                    label: L10n.settingsAPIToken,
+                    text: $settings.apiToken,
+                    prompt: "Agent token for this Mac",
+                    onChange: { settings.markChanged() }
+                )
+                SettingsSecretRow(
+                    label: L10n.settingsEnrollmentToken,
+                    text: $settings.enrollmentToken,
+                    prompt: "Instead of an API token",
+                    onChange: { settings.markChanged() }
+                )
             }
+            .padding(.top, LT.space24)
 
-            // Identity card
-            SettingsCardSection("IDENTITY") {
-                SettingsIconField(icon: "desktopcomputer", label: "Asset ID",
-                                  text: $settings.assetID,
-                                  prompt: "Auto-detected from hostname",
-                                  onChange: { settings.markChanged() })
+            LTDisclosureRow(title: "Identity", detail: "Asset ID, group ID", isExpanded: $showIdentity)
+                .padding(.top, LT.space12)
 
-                SettingsIconField(icon: "mappin.circle.fill", label: "Group ID",
-                                  text: $settings.groupID,
-                                  prompt: "Optional enrollment group",
-                                  onChange: { settings.markChanged() })
-            }
-
-            // Agent Control card
-            SettingsCardSection("AGENT CONTROL") {
-                HStack(spacing: LT.space8) {
-                    // State indicator
-                    LTStatusDot(color: status.state.color, size: 6)
-                    Text(status.state.rawValue)
-                        .font(LT.inter(11, weight: .medium))
-                        .foregroundStyle(LT.textSecondary)
-
-                    if let pid = status.pid, agentProcess.isRunning {
-                        LTCapsuleBadge(text: "PID \(pid)", color: LT.textMuted)
-                    }
-
-                    Spacer()
-
-                    if agentProcess.needsRestart {
-                        HStack(spacing: LT.space4) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .font(.system(size: 9))
-                            Text("Restart required")
-                                .font(LT.inter(10, weight: .medium))
-                        }
-                        .foregroundStyle(LT.warn)
-                    } else if agentProcess.isStarting {
-                        Text("Launching agent…")
-                            .font(LT.inter(10, weight: .medium))
-                            .foregroundStyle(LT.accent)
-                    } else if let issue = validationIssues.first {
-                        Text(issue)
-                            .font(LT.inter(10, weight: .medium))
-                            .foregroundStyle(LT.warn)
-                    } else if !settings.isConfigured {
-                        Text("Hub URL and token required")
-                            .font(LT.inter(10, weight: .medium))
-                            .foregroundStyle(LT.warn)
+            if showIdentity {
+                LTSheet(padding: EdgeInsets(top: 6, leading: LT.space16, bottom: 6, trailing: LT.space16)) {
+                    VStack(spacing: 0) {
+                        SettingsTextRow(
+                            label: L10n.settingsAssetID,
+                            text: $settings.assetID,
+                            prompt: "From the host name",
+                            onChange: { settings.markChanged() }
+                        )
+                        SettingsTextRow(
+                            label: L10n.settingsGroupID,
+                            text: $settings.groupID,
+                            prompt: "Optional",
+                            onChange: { settings.markChanged() }
+                        )
                     }
                 }
-
-                HStack(spacing: LT.space8) {
-                    if agentProcess.isRunning {
-                        LTPillButton("Restart", icon: "arrow.clockwise", color: LT.warn) {
-                            agentProcess.restart()
-                        }
-                        LTPillButton("Stop", icon: "stop.fill", color: LT.bad) {
-                            agentProcess.stop()
-                        }
-                    } else if agentProcess.isStarting {
-                        HStack(spacing: LT.space8) {
-                            LTSpinnerArc(color: LT.accent, size: 14)
-                            Text("Starting…")
-                                .font(LT.inter(11, weight: .semibold))
-                                .foregroundStyle(LT.accent)
-                        }
-                        .padding(.horizontal, LT.space12)
-                        .padding(.vertical, LT.space4 + 2)
-                        .background(LT.accent.opacity(0.1), in: Capsule())
-                        .overlay(Capsule().strokeBorder(LT.accent.opacity(0.25), lineWidth: 1))
-                    } else {
-                        LTPillButton("Start", icon: "play.fill", color: LT.ok) {
-                            agentProcess.start()
-                        }
-                        .opacity(canStartAgent ? 1 : 0.4)
-                        .allowsHitTesting(canStartAgent)
-                    }
-                    Spacer()
-                }
+                .padding(.top, LT.space4)
             }
         }
         .sheet(isPresented: $showDiagnosticsSheet) {
@@ -223,13 +80,137 @@ struct SettingsConnectionTab: View {
         }
     }
 
-    // MARK: - Computed Properties
+    private var testRow: some View {
+        HStack(spacing: 10) {
+            Button {
+                Task {
+                    isTestingConnection = true
+                    connectionTestResult = nil
+                    connectionTestResult = await ConnectionTester.quickTest(
+                        hubURL: settings.hubURL,
+                        tlsSkipVerify: settings.tlsSkipVerify,
+                        tlsCAFile: settings.tlsCAFile
+                    )
+                    isTestingConnection = false
+                }
+            } label: {
+                HStack(spacing: LT.space6) {
+                    if isTestingConnection {
+                        LTSpinnerArc(color: LT.text3, size: 11)
+                    }
+                    Text(L10n.settingsTestConnection)
+                }
+            }
+            .buttonStyle(LTSecondaryButtonStyle())
+            .disabled(isTestingConnection)
+            .accessibilityIdentifier("settings-test-connection")
+            .accessibilityHint("Tests the connection to the Hub")
 
-    var validationIssues: [String] {
+            ConnectionTestResultText(result: connectionTestResult)
+
+            Spacer(minLength: LT.space8)
+
+            if connectionTestResult != nil {
+                Button(L10n.settingsFullDiagnostics) { showDiagnosticsSheet = true }
+                    .buttonStyle(LTTextButtonStyle(fontSize: 12))
+            }
+        }
+    }
+
+    private var validationIssues: [String] {
         settings.validationErrors()
     }
 
-    var canStartAgent: Bool {
-        settings.isConfigured && validationIssues.isEmpty && !agentProcess.isStarting
+    private var hubAddressError: String? {
+        // An empty address is shown as the prompt, not as an error.
+        guard !settings.hubURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return validationIssues.first(where: AgentSettingsValidator.isHubAddressIssue)
+    }
+}
+
+/// "Reachable · 24 ms" in secondary text, or the failure in red.
+struct ConnectionTestResultText: View {
+    let result: ConnectionTestResult?
+
+    var body: some View {
+        switch result {
+        case .success(let milliseconds):
+            Text(ConnectionTestText.success(milliseconds))
+                .font(LT.font(12).monospacedDigit())
+                .foregroundStyle(LT.text2)
+        case .failure(let message):
+            Text(message)
+                .font(LT.font(12))
+                .foregroundStyle(LT.badText)
+                .lineLimit(2)
+                .truncationMode(.middle)
+                .help(message)
+        case nil:
+            EmptyView()
+        }
+    }
+}
+
+/// The agent's state first: status word and uptime, with Restart and Stop (or Start).
+struct SettingsAgentStatusSheet: View {
+    @ObservedObject var settings: AgentSettings
+    @ObservedObject var agentProcess: AgentProcess
+    @ObservedObject var status: AgentStatus
+    @ObservedObject var runtime: LocalAPIRuntimeStore
+    let issue: String?
+
+    private var hero: AgentHeroPresentation {
+        .resolve(agentProcess: agentProcess, status: status, runtime: runtime, settings: settings, includeHost: false)
+    }
+
+    private var canStartAgent: Bool {
+        settings.isConfigured && settings.validationErrors().isEmpty && !agentProcess.isStarting
+    }
+
+    var body: some View {
+        LTSheet(padding: EdgeInsets(top: LT.space12, leading: LT.space16, bottom: LT.space12, trailing: LT.space12)) {
+            HStack(spacing: LT.space8) {
+                HStack(alignment: .firstTextBaseline, spacing: LT.space8) {
+                    Text(hero.label)
+                        .font(LT.font(13, weight: .medium))
+                        .foregroundStyle(LT.text)
+                    Text(line.text)
+                        .font(LT.font(13).monospacedDigit())
+                        .foregroundStyle(line.color)
+                        .lineLimit(2)
+                }
+                .accessibilityElement(children: .combine)
+                Spacer(minLength: LT.space8)
+                controls
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var controls: some View {
+        if agentProcess.isRunning {
+            Button(L10n.settingsRestart) { agentProcess.restart() }
+                .buttonStyle(LTSecondaryButtonStyle())
+            Button(L10n.settingsStop) { agentProcess.stop() }
+                .buttonStyle(LTSecondaryButtonStyle())
+        } else if agentProcess.isStarting {
+            LTSpinnerArc(color: LT.text3, size: 14)
+        } else {
+            Button(L10n.settingsStart) { agentProcess.start() }
+                .buttonStyle(LTSecondaryButtonStyle())
+                .disabled(!canStartAgent)
+        }
+    }
+
+    private var line: (text: String, color: Color) {
+        if agentProcess.needsRestart && agentProcess.isRunning {
+            return (L10n.settingsRestartRequired, LT.warnText)
+        }
+        if !agentProcess.isRunning && !agentProcess.isStarting {
+            if let issue { return (issue, LT.badText) }
+            if !settings.isConfigured { return ("Add the Hub address and a token", LT.warnText) }
+        }
+        let color: Color = hero.tone == .bad ? LT.badText : (hero.tone == .warn ? LT.warnText : LT.text3)
+        return (hero.subtitle, color)
     }
 }

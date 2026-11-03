@@ -1,5 +1,7 @@
+import AppKit
 import SwiftUI
 
+/// The menu bar window: status, usage (shown once), alerts, actions, footer.
 struct MenuBarView: View {
     let status: AgentStatus
     let agentProcess: AgentProcess
@@ -8,133 +10,102 @@ struct MenuBarView: View {
     let logBuffer: LogBuffer
     let apiClient: LocalAPIClient
     var appUpdates: AppUpdateChecker?
-    /// Called when the user activates "Pop Out Window". Wired in App.swift to the shared controller.
+    /// Called when the user activates "Pop out". Wired in App.swift to the shared controller.
     var onPopOut: () -> Void = {}
     @Environment(\.openWindow) private var openWindow
-    @Environment(\.animationsActive) private var animationsActive
-    @State private var hoveredItem: String?
-    @State private var copyToast: String?
+    @State private var toast: MenuBarToast?
 
     var body: some View {
-        VStack(spacing: 0) {
-            MenuBarHeroSection(
+        VStack(alignment: .leading, spacing: 0) {
+            MenuBarHeaderSection(
                 status: status,
                 agentProcess: agentProcess,
                 settings: settings,
-                runtime: apiClient.runtime,
-                metrics: apiClient.metrics
+                runtime: apiClient.runtime
             )
-
-            MenuBarRestartBannerSection(agentProcess: agentProcess)
-                .padding(.horizontal, LT.space12)
-                .padding(.bottom, LT.space6)
-
-            if let appUpdates {
-                MenuBarAppUpdateSection(updates: appUpdates)
-            }
-
             LTSeparator()
-                .padding(.horizontal, LT.space12)
-
-            ScrollView(.vertical, showsIndicators: false) {
-                LazyVStack(spacing: LT.space4) {
-                    MenuBarSystemSection(runtime: apiClient.runtime, metrics: apiClient.metrics, agentProcess: agentProcess)
-
-                    MenuBarConnectionSection(
-                        status: status,
-                        settings: settings,
-                        runtime: apiClient.runtime,
-                        onCopy: copyToClipboard
-                    )
-
-                    MenuBarAlertsSection(alerts: apiClient.alerts, consoleBaseURL: settings.consoleURL)
-
-                    MenuBarScreenSharingSection(screenSharing: screenSharing, settings: settings)
-
-                    LTSeparator()
-                        .padding(.horizontal, LT.space12)
-
-                    MenuBarQuickActionsSection(
-                        status: status,
-                        settings: settings,
-                        logBuffer: logBuffer,
-                        onOpenConsole: {
-                            NSApp.activate(ignoringOtherApps: true)
-                            openConsole()
-                        },
-                        onOpenDevicePage: {
-                            NSApp.activate(ignoringOtherApps: true)
-                            openDevicePage()
-                        },
-                        onPopOut: {
-                            NSApp.activate(ignoringOtherApps: true)
-                            onPopOut()
-                        },
-                        onOpenLogWindow: {
-                            NSApp.activate(ignoringOtherApps: true)
-                            openLogWindow()
-                        },
-                        onTestConnection: {
-                            Task {
-                                let result = await ConnectionTester.quickTest(
-                                    hubURL: settings.hubURL,
-                                    tlsSkipVerify: settings.tlsSkipVerify,
-                                    tlsCAFile: settings.tlsCAFile
-                                )
-                                let message: String
-                                switch result {
-                                case .success(responseTimeMs: let ms):
-                                    message = "Connection successful (\(ms)ms)"
-                                case .failure(error: let error):
-                                    message = "Connection failed: \(error)"
-                                }
-                                copyToClipboard(message, label: "Test")
-                            }
-                        },
-                        onCopyDiagnostics: {
-                            NSApp.activate(ignoringOtherApps: true)
-                            copyDiagnostics()
-                        },
-                        onOpenSettings: {
-                            NSApp.activate(ignoringOtherApps: true)
-                            openWindow(id: "settings")
-                        }
-                    )
+            MenuBarUsageSection(
+                runtime: apiClient.runtime,
+                metrics: apiClient.metrics,
+                agentProcess: agentProcess,
+                screenSharing: screenSharing,
+                settings: settings
+            )
+            MenuBarAlertsSection(alerts: apiClient.alerts, consoleBaseURL: settings.consoleURL)
+            MenuBarQuickActionsSection(
+                status: status,
+                settings: settings,
+                onOpenConsole: {
+                    NSApp.activate(ignoringOtherApps: true)
+                    openConsole()
+                },
+                onOpenDevicePage: {
+                    NSApp.activate(ignoringOtherApps: true)
+                    openDevicePage()
+                },
+                onPopOut: {
+                    NSApp.activate(ignoringOtherApps: true)
+                    onPopOut()
+                },
+                onOpenLogWindow: {
+                    NSApp.activate(ignoringOtherApps: true)
+                    openWindow(id: "log-viewer")
+                },
+                onTestConnection: testConnection,
+                onCopyDiagnostics: {
+                    NSApp.activate(ignoringOtherApps: true)
+                    copyDiagnostics()
+                },
+                onOpenSettings: {
+                    NSApp.activate(ignoringOtherApps: true)
+                    openWindow(id: "settings")
                 }
-            }
-
-            MenuBarFooterSection(metadata: apiClient.metadata, agentProcess: agentProcess, settings: settings)
+            )
+            LTSeparator()
+            MenuBarFooterSection(
+                metadata: apiClient.metadata,
+                agentProcess: agentProcess,
+                settings: settings,
+                appUpdates: appUpdates
+            )
         }
-        .background(MenuBarBackground(status: status, agentProcess: agentProcess, runtime: apiClient.runtime))
-        // A ScrollView has no intrinsic height inside MenuBarExtra(.window).
-        // Without an explicit container height macOS collapses the entire
-        // system/connection/actions region, leaving only the hero and footer.
-        .frame(width: 340, height: 560)
+        .padding(LT.space6)
+        .frame(width: 320)
+        .fixedSize(horizontal: false, vertical: true)
+        .background(LT.pop)
         .overlay(alignment: .top) {
-            if let toast = copyToast {
-                LTToast(text: toast)
+            if let toast {
+                LTToast(text: toast.text, isError: toast.isError)
                     .transition(.move(edge: .top).combined(with: .opacity))
-                    .padding(.top, 8)
-                    .zIndex(100)
+                    .padding(.top, LT.space8)
+                    .padding(.horizontal, LT.space12)
             }
         }
-        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: copyToast)
+        .animation(LT.springSnappy, value: toast)
     }
 
-    // MARK: - Helpers
+    // MARK: - Actions
 
-    private func copyToClipboard(_ value: String, label: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(value, forType: .string)
-        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
-        withAnimation(LT.springSnappy) {
-            copyToast = "\(label) copied"
+    private func show(_ text: String, isError: Bool = false) {
+        let next = MenuBarToast(text: text, isError: isError)
+        toast = next
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) {
+            if toast == next { toast = nil }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
-            if copyToast == "\(label) copied" {
-                withAnimation(LT.springSnappy) {
-                    copyToast = nil
-                }
+    }
+
+    private func testConnection() {
+        Task {
+            let result = await ConnectionTester.quickTest(
+                hubURL: settings.hubURL,
+                tlsSkipVerify: settings.tlsSkipVerify,
+                tlsCAFile: settings.tlsCAFile
+            )
+            switch result {
+            case .success(responseTimeMs: let ms):
+                show(ConnectionTestText.success(ms))
+            case .failure(error: let error):
+                show(error, isError: true)
             }
         }
     }
@@ -146,15 +117,10 @@ struct MenuBarView: View {
     }
 
     @MainActor private func openDevicePage() {
-        if let base = settings.consoleURL {
-            if let deviceURL = ConsoleURLBuilder.nodeURL(base: base, assetID: status.assetID) {
-                NSWorkspace.shared.open(deviceURL)
-            }
+        if let base = settings.consoleURL,
+           let deviceURL = ConsoleURLBuilder.nodeURL(base: base, assetID: status.assetID) {
+            NSWorkspace.shared.open(deviceURL)
         }
-    }
-
-    private func openLogWindow() {
-        openWindow(id: "log-viewer")
     }
 
     @MainActor private func copyDiagnostics() {
@@ -185,6 +151,22 @@ struct MenuBarView: View {
             secretPersistenceErrors: settings.secretPersistenceErrors,
             logSummaryLines: logSummary.reportLines
         )
-        copyToClipboard(report, label: "Diagnostics")
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(report, forType: .string)
+        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+        show("Diagnostics copied")
+    }
+}
+
+private struct MenuBarToast: Equatable {
+    let id = UUID()
+    let text: String
+    let isError: Bool
+}
+
+/// The quick connection test result, shared by the menu, Settings and setup.
+enum ConnectionTestText {
+    static func success(_ milliseconds: Int) -> String {
+        "Reachable · \(milliseconds) ms"
     }
 }

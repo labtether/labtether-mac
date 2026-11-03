@@ -25,7 +25,7 @@ struct AboutView: View {
 
     var body: some View {
         ZStack {
-            LT.bg.ignoresSafeArea()
+            LT.canvas.ignoresSafeArea()
 
             VStack(spacing: 0) {
                 Spacer()
@@ -52,7 +52,7 @@ struct AboutView: View {
                     .frame(height: LT.space24)
 
                 Divider()
-                    .overlay(LT.panelBorder)
+                    .overlay(LT.hair)
 
                 Spacer()
                     .frame(height: LT.space16)
@@ -77,47 +77,50 @@ struct AboutView: View {
     // MARK: - Subviews
 
     private var appIconView: some View {
-        Image(nsImage: NSApp.applicationIconImage)
-            .resizable()
-            .frame(width: 64, height: 64)
-            .shadow(color: LT.accent.opacity(0.15), radius: 12)
+        LTBrandMark(size: 64)
+            .accessibilityHidden(true)
     }
 
     private var titleView: some View {
         Text(L10n.aboutTitle)
-            .font(LT.sora(18, weight: .semibold))
-            .foregroundStyle(LT.textPrimary)
+            .font(LT.font(18, weight: .semibold))
+            .foregroundStyle(LT.text)
     }
 
     private var versionBlock: some View {
         VStack(spacing: LT.space4) {
             Text(appVersionString)
-                .font(LT.inter(13))
-                .foregroundStyle(LT.textSecondary)
+                .font(LT.font(13).monospacedDigit())
+                .foregroundStyle(LT.text2)
                 .accessibilityIdentifier("about-version")
 
-            Text("Agent: \(metadata.snapshot.agentVersion ?? L10n.aboutNotRunning)")
-                .font(LT.mono(12))
-                .foregroundStyle(LT.textSecondary)
+            Text("\(L10n.aboutAgent) \(metadata.snapshot.agentVersion ?? L10n.aboutNotRunning)")
+                .font(LT.font(12).monospacedDigit())
+                .foregroundStyle(LT.text2)
 
-            Text("macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
-                .font(LT.mono(12))
-                .foregroundStyle(LT.textMuted)
+            Text("macOS \(macOSVersion)")
+                .font(LT.font(12).monospacedDigit())
+                .foregroundStyle(LT.text3)
         }
+    }
+
+    private var macOSVersion: String {
+        let version = ProcessInfo.processInfo.operatingSystemVersion
+        return "\(version.majorVersion).\(version.minorVersion).\(version.patchVersion)"
     }
 
     private var fingerprintRow: some View {
         HStack(spacing: LT.space6) {
             Text(truncatedFingerprint)
-                .font(LT.mono(12))
-                .foregroundStyle(LT.textMuted)
+                .font(fingerprint.isEmpty ? LT.font(12) : LT.mono(12))
+                .foregroundStyle(LT.text3)
 
             Button {
                 copyFingerprint()
             } label: {
                 Image(systemName: isFingerprintCopied ? "checkmark" : "doc.on.doc")
                     .font(.system(size: 11, weight: .regular))
-                    .foregroundStyle(isFingerprintCopied ? LT.ok : LT.textMuted)
+                    .foregroundStyle(isFingerprintCopied ? LT.text : LT.text3)
                     .animation(.easeInOut(duration: LT.animFast), value: isFingerprintCopied)
             }
             .buttonStyle(.plain)
@@ -137,14 +140,14 @@ struct AboutView: View {
 
     private func externalLink(_ label: String, url: String) -> some View {
         Link(label, destination: URL(string: url)!)
-            .font(LT.inter(12))
-            .foregroundStyle(LT.accent)
+            .font(LT.font(12, weight: .medium))
+            .foregroundStyle(LT.text2)
     }
 
     private var copyrightView: some View {
         Text("\u{00A9} 2026 LabTether")
-            .font(LT.inter(11))
-            .foregroundStyle(LT.textMuted)
+            .font(LT.font(11))
+            .foregroundStyle(LT.text3)
     }
 
     // MARK: - Helpers
@@ -158,9 +161,9 @@ struct AboutView: View {
 
     /// Device fingerprint truncated to 16 characters with trailing ellipsis when longer.
     private var truncatedFingerprint: String {
-        guard !fingerprint.isEmpty else { return "No fingerprint" }
+        guard !fingerprint.isEmpty else { return "No device fingerprint yet" }
         if fingerprint.count > 16 {
-            return String(fingerprint.prefix(16)) + "..."
+            return String(fingerprint.prefix(16)) + "…"
         }
         return fingerprint
     }

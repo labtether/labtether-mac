@@ -2,13 +2,21 @@ import Foundation
 
 /// Validates AgentSettings and returns human-readable error messages.
 enum AgentSettingsValidator {
+    static let hubAddressMissing = "Add the Hub address."
+    static let hubAddressInvalid = "Use a Hub address like hub.lan:8443 or https://hub.lan."
+
+    /// True for the messages that belong under the Hub address field.
+    static func isHubAddressIssue(_ message: String) -> Bool {
+        message == hubAddressMissing || message == hubAddressInvalid
+    }
+
     static func validationErrors(for settings: AgentSettings) -> [String] {
         var errors: [String] = []
 
         if settings.hubURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            errors.append("Hub URL is required.")
+            errors.append(hubAddressMissing)
         } else if settings.normalizedHubWebSocketURL() == nil {
-            errors.append("Hub URL must be a valid host URL (ws/wss/http/https).")
+            errors.append(hubAddressInvalid)
         }
 
         let trimmedPort = settings.agentPort.trimmingCharacters(in: .whitespacesAndNewlines)

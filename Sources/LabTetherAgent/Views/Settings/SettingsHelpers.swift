@@ -1,129 +1,126 @@
 import SwiftUI
 
-// MARK: - SettingsCardSection
+// MARK: - SettingsSection
 
-struct SettingsCardSection<Content: View>: View {
+/// A sentence-case title over one sheet of form rows, with an optional footnote.
+struct SettingsSection<Content: View>: View {
     let title: String
-    var glowHint: Color?
+    var footnote: String?
     @ViewBuilder let content: () -> Content
 
-    init(_ title: String, glowHint: Color? = nil, @ViewBuilder content: @escaping () -> Content) {
+    init(_ title: String, footnote: String? = nil, @ViewBuilder content: @escaping () -> Content) {
         self.title = title
-        self.glowHint = glowHint
+        self.footnote = footnote
         self.content = content
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: LT.space8) {
-            LTSectionHeader(title)
-            LTGlassCard(glowColor: glowHint) {
-                VStack(spacing: LT.space8) {
+            LTSectionTitle(title)
+            LTSheet(padding: EdgeInsets(top: 6, leading: LT.space16, bottom: 6, trailing: LT.space16)) {
+                VStack(alignment: .leading, spacing: 0) {
                     content()
+                }
+            }
+            if let footnote {
+                Text(footnote)
+                    .font(LT.font(12))
+                    .foregroundStyle(LT.text3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, LT.space8)
+            }
+        }
+    }
+}
+
+// MARK: - Rows
+
+/// A labelled text field row.
+struct SettingsTextRow: View {
+    let label: String
+    @Binding var text: String
+    var prompt: String = ""
+    var error: String?
+    var onChange: () -> Void = {}
+
+    var body: some View {
+        LTFormRow(label: label, alignment: error == nil ? .center : .top) {
+            VStack(alignment: .leading, spacing: 0) {
+                LTTextField(label: label, text: $text, prompt: prompt, hasError: error != nil, onChange: onChange)
+                if let error {
+                    LTFieldError(text: error)
                 }
             }
         }
     }
 }
 
-// MARK: - SettingsIconField
-
-struct SettingsIconField: View {
-    let icon: String
+/// A labelled token field row.
+struct SettingsSecretRow: View {
     let label: String
     @Binding var text: String
-    let prompt: String
+    var prompt: String = ""
     var onChange: () -> Void = {}
 
-    @FocusState private var isFocused: Bool
-
     var body: some View {
-        HStack(spacing: LT.space8) {
-            Image(systemName: icon)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(isFocused ? LT.accent : LT.textMuted)
-                .animation(.easeInOut(duration: LT.animFast), value: isFocused)
-                .frame(width: 16)
-            TextField(label, text: $text, prompt: Text(prompt).foregroundColor(LT.textMuted.opacity(0.5)))
-                .textFieldStyle(.plain)
-                .font(LT.inter(12))
-                .foregroundStyle(LT.textPrimary)
-                .focused($isFocused)
-                .onChange(of: text) { _ in onChange() }
+        LTFormRow(label: label) {
+            LTSecretField(label: label, text: $text, prompt: prompt, onChange: onChange)
         }
-        .padding(.horizontal, LT.space12)
-        .padding(.vertical, 7)
-        .background(LT.panelGlass, in: RoundedRectangle(cornerRadius: LT.radiusSm, style: .continuous))
-        .ltFocusRing(isFocused)
     }
 }
 
-// MARK: - SettingsSecureIconField
-
-struct SettingsSecureIconField: View {
-    let icon: String
+/// A labelled number field that keeps digits only and clamps to `range` as the person types.
+struct SettingsNumberRow: View {
     let label: String
     @Binding var text: String
-    let prompt: String
+    var prompt: String = ""
+    let range: ClosedRange<Int>
     var onChange: () -> Void = {}
 
-    @FocusState private var isFocused: Bool
-
     var body: some View {
-        HStack(spacing: LT.space8) {
-            Image(systemName: icon)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(isFocused ? LT.accent : LT.textMuted)
-                .animation(.easeInOut(duration: LT.animFast), value: isFocused)
-                .frame(width: 16)
-
-            SecureField(label, text: $text, prompt: Text(prompt).foregroundColor(LT.textMuted.opacity(0.5)))
-                .textFieldStyle(.plain)
-                .font(LT.inter(12))
-                .foregroundStyle(LT.textPrimary)
-                .focused($isFocused)
-                .onChange(of: text) { _ in onChange() }
+        LTFormRow(label: label) {
+            LTTextField(label: label, text: $text, prompt: prompt, onChange: {
+                let clamped = SettingsNumberRow.clamped(text, to: range)
+                if clamped != text { text = clamped }
+                onChange()
+            })
+            .frame(maxWidth: 140)
         }
-        .padding(.horizontal, LT.space12)
-        .padding(.vertical, 7)
-        .background(LT.panelGlass, in: RoundedRectangle(cornerRadius: LT.radiusSm, style: .continuous))
-        .ltFocusRing(isFocused)
+    }
+
+    /// Digits only; above the range becomes the maximum, a non-empty value below it the minimum.
+    static func clamped(_ text: String, to range: ClosedRange<Int>) -> String {
+        let digits = text.filter(\.isNumber)
+        guard let value = Int(digits) else { return digits }
+        if value > range.upperBound { return String(range.upperBound) }
+        if value < range.lowerBound { return String(range.lowerBound) }
+        return digits
     }
 }
 
-// MARK: - SettingsToggleRow
-
-struct SettingsToggleRow: View {
-    let icon: String
+/// A labelled native segmented control.
+/// Long option titles use a pop-up menu instead (`segmented: false`).
+struct SettingsPickerRow<Value: Hashable>: View {
     let label: String
-    @Binding var isOn: Bool
-    var onChange: (() -> Void)?
+    let selection: Binding<Value>
+    let options: [(title: String, value: Value)]
+    var segmented = true
 
     var body: some View {
-        HStack(spacing: LT.space8) {
-            Image(systemName: icon)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(isOn ? LT.accent : LT.textMuted)
-                .animation(.easeInOut(duration: LT.animFast), value: isOn)
-                .frame(width: 16)
-
-            Text(label)
-                .font(LT.inter(12, weight: .medium))
-                .foregroundStyle(LT.textPrimary)
-
-            Spacer()
-
-            Toggle("", isOn: $isOn)
-                .toggleStyle(.switch)
-                .tint(LT.accent)
-                .scaleEffect(0.7)
-                .onChange(of: isOn) { _ in onChange?() }
+        LTFormRow(label: label) {
+            if segmented {
+                picker.pickerStyle(.segmented).labelsHidden().fixedSize()
+            } else {
+                picker.pickerStyle(.menu).labelsHidden().fixedSize()
+            }
         }
-        .padding(.horizontal, LT.space12)
-        .padding(.vertical, LT.space4)
-        .background(LT.panelGlass, in: RoundedRectangle(cornerRadius: LT.radiusSm, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: LT.radiusSm, style: .continuous)
-                .strokeBorder(LT.panelBorder, lineWidth: 1)
-        )
+    }
+
+    private var picker: some View {
+        Picker(label, selection: selection) {
+            ForEach(options, id: \.value) { option in
+                Text(option.title).tag(option.value)
+            }
+        }
     }
 }

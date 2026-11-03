@@ -48,14 +48,11 @@ struct LabTetherAgentApp: App {
             let presentation = appState.menuBarLabelPresentation
 
             HStack(spacing: 4) {
-                LTMenuBarStatusIcon(kind: presentation.kind)
-                if let primaryMetricsText = presentation.primaryMetricsText {
-                    Text(primaryMetricsText)
-                        .font(LT.mono(10, weight: .medium))
-                    if let secondaryMetricsText = presentation.secondaryMetricsText {
-                        Text(secondaryMetricsText)
-                            .font(LT.mono(10, weight: .medium))
-                    }
+                Image(nsImage: MenuBarGlyph.image(for: presentation.kind))
+                    .accessibilityLabel(presentation.kind.accessibilityLabel)
+                if let metricsText = presentation.metricsText {
+                    Text(metricsText)
+                        .font(.system(size: 12, weight: .medium).monospacedDigit())
                 }
             }
         }
@@ -66,17 +63,18 @@ struct LabTetherAgentApp: App {
                 settings: appState.settings,
                 agentProcess: appState.agentProcess,
                 status: appState.status,
-                metadata: appState.apiClient.metadata
+                metadata: appState.apiClient.metadata,
+                runtime: appState.apiClient.runtime
             )
         }
         .windowResizability(.contentSize)
 
-        Window("Agent Logs", id: "log-viewer") {
+        Window("Logs", id: "log-viewer") {
             LogBufferView(logBuffer: appState.logBuffer, status: appState.status)
         }
         .defaultSize(width: 700, height: 500)
 
-        Window("Welcome to LabTether", id: "onboarding") {
+        Window("Set up LabTether", id: "onboarding") {
             OnboardingView(
                 settings: appState.settings,
                 agentProcess: appState.agentProcess
@@ -97,7 +95,7 @@ struct LabTetherAgentApp: App {
 /// Handles app lifecycle events to ensure clean process management.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Register bundled premium fonts before any SwiftUI views render.
+        // Register the bundled mono font before any SwiftUI views render.
         FontLoader.registerAll()
 
         // The state-directory lock was acquired before AppState construction.

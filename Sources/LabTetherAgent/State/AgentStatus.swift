@@ -29,8 +29,8 @@ enum ConnectionState: String {
         case .reconnecting: return LT.warn
         case .enrolling:    return LT.warn
         case .authFailed:   return LT.bad
-        case .starting:     return LT.accent
-        case .stopped:      return LT.textMuted
+        case .starting:     return LT.text3
+        case .stopped:      return LT.text3
         case .error:        return LT.bad
         }
     }
@@ -46,6 +46,8 @@ final class AgentStatus: ObservableObject {
     @Published var lastError: String = ""
     @Published var pid: Int32? = nil
     @Published var startedAt: Date? = nil
+    /// When the process last stopped, for "Stopped · since 21:12".
+    @Published var stoppedAt: Date? = nil
     private var latestLastEvent: String = ""
     private let visibility = VisibilityGate()
 
@@ -263,6 +265,7 @@ final class AgentStatus: ObservableObject {
 
     func markStarting(pid: Int32? = nil) {
         assignIfChanged(\.state, .starting)
+        assignIfChanged(\.stoppedAt, nil)
         assignIfChanged(\.pid, pid)
         if let pid {
             assignIfChanged(\.startedAt, Date())
@@ -275,6 +278,9 @@ final class AgentStatus: ObservableObject {
     }
 
     func markStopped() {
+        if state != .stopped || stoppedAt == nil {
+            assignIfChanged(\.stoppedAt, Date())
+        }
         assignIfChanged(\.state, .stopped)
         assignIfChanged(\.pid, nil)
         assignIfChanged(\.startedAt, nil)
