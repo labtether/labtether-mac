@@ -53,6 +53,7 @@ extension AgentSettings {
     /// Hub URL only. Called on each connection; failures keep the fallback.
     func refreshHubConsoleURL() {
         guard let wsURL = normalizedHubWebSocketURL() else { return }
+        recordHubServerKey()
         let configuredCA = tlsCAFile.trimmingCharacters(in: .whitespacesAndNewlines)
         // The bundled agent trusts the CA the Hub returned at enrollment
         // when no CA file is configured.

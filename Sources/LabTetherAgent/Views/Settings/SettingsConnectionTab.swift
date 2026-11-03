@@ -10,6 +10,7 @@ struct SettingsConnectionTab: View {
     @State private var isTestingConnection = false
     @State private var showDiagnosticsSheet = false
     @State private var showIdentity = false
+    @State private var hubChange: HubChangeVerdict = .unchanged
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -30,6 +31,21 @@ struct SettingsConnectionTab: View {
                     onChange: { settings.markChanged() }
                 )
                 .accessibilityIdentifier("settings-hub-url")
+                .task(id: settings.hubURL) {
+                    hubChange = .unchanged
+                    try? await Task.sleep(nanoseconds: 700_000_000)
+                    guard !Task.isCancelled else { return }
+                    hubChange = await settings.checkHubChange()
+                }
+
+                if let note = HubChangeNote(verdict: hubChange) {
+                    LTFormRow(label: "") {
+                        Text(note.text)
+                            .font(LT.font(12))
+                            .foregroundStyle(note.isWarning ? LT.warnText : LT.text3)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
 
                 LTFormRow(label: "") { testRow }
 
@@ -212,5 +228,27 @@ struct SettingsAgentStatusSheet: View {
         }
         let color: Color = hero.tone == .bad ? LT.badText : (hero.tone == .warn ? LT.warnText : LT.text3)
         return (hero.subtitle, color)
+    }
+}
+
+/// The line under a changed Hub address: whether this Mac keeps its token.
+struct HubChangeNote: Equatable {
+    let text: String
+    let isWarning: Bool
+
+    init?(verdict: HubChangeVerdict) {
+        switch verdict {
+        case .unchanged:
+            return nil
+        case .sameHub:
+            text = "Same Hub. This Mac keeps its token."
+            isWarning = false
+        case .otherHub:
+            text = "Another Hub. Restart removes this Mac's token; then add a token from that Hub."
+            isWarning = true
+        case .unknown:
+            text = "Can't confirm this is the same Hub. Restart asks before removing this Mac's token."
+            isWarning = true
+        }
     }
 }

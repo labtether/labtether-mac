@@ -40,6 +40,7 @@ final class AppState: ObservableObject {
     private var consoleLookupObserver: AnyCancellable?
     private var settingsObserver: AnyCancellable?
     private var performanceControlObserver: NSObjectProtocol?
+    private var hubTokenObserver: NSObjectProtocol?
     private var pendingMenuBarLabelRefresh = false
     private lazy var lastMenuBarLabelPresentation = menuBarLabelPresentation
 
@@ -166,6 +167,16 @@ final class AppState: ObservableObject {
             debugBoot("Auto-start disabled")
         }
 
+        // After a move to another Hub removed the token, setup asks for a new one.
+        hubTokenObserver = NotificationCenter.default.addObserver(
+            forName: .labTetherNeedsHubToken, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.settings.hasCompletedOnboarding = false
+                self?.shouldShowOnboarding = true
+            }
+        }
+
         // Trigger onboarding if not configured and hasn't been completed
         if !settings.isConfigured && !settings.hasCompletedOnboarding {
             shouldShowOnboarding = true
@@ -234,7 +245,8 @@ final class AppState: ObservableObject {
             isReachable: apiClient.isReachable,
             metrics: apiClient.metrics.snapshot.current,
             hasFiringAlerts: !apiClient.alerts.snapshot.firingAlerts.isEmpty,
-            hasCriticalAlert: apiClient.alerts.snapshot.hasCriticalFiring
+            hasCriticalAlert: apiClient.alerts.snapshot.hasCriticalFiring,
+            isConfigured: settings.isConfigured
         )
     }
 

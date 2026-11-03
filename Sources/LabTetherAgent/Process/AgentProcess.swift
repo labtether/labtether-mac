@@ -31,6 +31,7 @@ final class AgentProcess: ObservableObject {
     @Published var needsRestart: Bool = false
 
     private var userInitiatedStop = false
+    var checkingHubChange = false
     let crashCoordinator = CrashRestartCoordinator()
 
     private var settingsObserver: AnyCancellable?
@@ -98,6 +99,7 @@ final class AgentProcess: ObservableObject {
     func start(resetCrashHistory: Bool = true) {
         debugBootProcess("start called resetCrashHistory=\(resetCrashHistory) process_nil=\(process == nil) isStarting=\(isStarting)")
         guard process == nil && !isStarting else { return }
+        guard hubChangeSettled(then: { [weak self] in self?.start(resetCrashHistory: resetCrashHistory) }) else { return }
         cancelCrashRestart()
 
         if resetCrashHistory {
@@ -118,6 +120,9 @@ final class AgentProcess: ObservableObject {
         }
         if droppedOtherHubCredentials {
             logBuffer.append("[app] The Hub address changed, so the token saved for the previous Hub was removed.")
+            if !settings.isConfigured {
+                NotificationCenter.default.post(name: .labTetherNeedsHubToken, object: nil)
+            }
         }
 
         // Validate config before launching
@@ -259,6 +264,7 @@ final class AgentProcess: ObservableObject {
     }
 
     func restart() {
+        guard hubChangeSettled(then: { [weak self] in self?.restart() }) else { return }
         guard process != nil else {
             start()
             return

@@ -44,6 +44,8 @@ final class AgentSettings: ObservableObject {
     var allowsSystemIntegration: Bool { stateLocation?.isolated == false }
     @Published private(set) var preferencePersistenceError: String?
     var localAPIAuthToken: String = ""
+    /// A move to another Hub the person confirmed (not saved; asked again after a relaunch).
+    var confirmedHubChangeScope: String?
 
     /// The built-in address before setup; never shown to people as theirs.
     static let defaultHubURL = "wss://localhost:8443/ws/agent"
