@@ -128,7 +128,10 @@ struct AgentHeroPresentation: Equatable {
         settings: AgentSettings? = nil,
         includeHost: Bool = true
     ) -> AgentHeroPresentation {
-        resolve(
+        if let settings, !settings.isConfigured, !agentProcess.isRunning, !agentProcess.isStarting {
+            return AgentHeroPresentation(label: "Not set up", subtitle: "Add the Hub address and a token", tone: .warn)
+        }
+        return resolve(
             processIsRunning: agentProcess.isRunning,
             processIsStarting: agentProcess.isStarting,
             statusState: status.state,
