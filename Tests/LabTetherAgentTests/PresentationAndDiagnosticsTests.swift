@@ -2,6 +2,31 @@ import XCTest
 @testable import LabTetherAgent
 
 final class AgentHeroPresentationTests: XCTestCase {
+    /// A fresh install has nothing wrong yet: it says "Not set up", not "Error".
+    @MainActor
+    func testFreshInstallSaysNotSetUp() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("lt-hero-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let settings = AgentSettings(
+            testSettingsStore: UserDefaults(suiteName: "lt-hero-\(UUID().uuidString)")!,
+            appSupportDirectory: folder
+        )
+        let status = AgentStatus()
+        status.markError("Not set up. Add the Hub address and a token in Settings.")
+        let process = AgentProcess(
+            status: status, settings: settings,
+            notifications: NotificationManager(requestAuthorization: false, allowSystemIntegration: false),
+            logBuffer: LogBuffer(),
+            sessionHistory: SessionHistoryTracker(filePath: folder.appendingPathComponent("h.json").path)
+        )
+        let hero = AgentHeroPresentation.resolve(
+            agentProcess: process, status: status, runtime: LocalAPIRuntimeStore(), settings: settings
+        )
+        XCTAssertEqual(hero.label, "Not set up")
+        XCTAssertEqual(hero.tone, .warn)
+    }
+
     func testResolvePrefersAuthFailureOverWrapperConnectedState() {
         let presentation = AgentHeroPresentation.resolve(
             processIsRunning: true,

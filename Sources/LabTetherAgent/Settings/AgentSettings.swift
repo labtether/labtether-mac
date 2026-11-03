@@ -45,8 +45,9 @@ final class AgentSettings: ObservableObject {
     @Published private(set) var preferencePersistenceError: String?
     var localAPIAuthToken: String = ""
 
-    // Default to local secure hub.
-    @Published var hubURL: String = "wss://localhost:8443/ws/agent" {
+    /// The built-in address before setup; never shown to people as theirs.
+    static let defaultHubURL = "wss://localhost:8443/ws/agent"
+    @Published var hubURL: String = AgentSettings.defaultHubURL {
         didSet { savePreference(hubURL, key: "hubURL") }
     }
     @Published var enrollmentToken: String = "" {
@@ -207,7 +208,7 @@ final class AgentSettings: ObservableObject {
     private func loadPreferences() {
         loadingPreferences = true
         defer { loadingPreferences = false }
-        hubURL = preferences.string("hubURL", default: "wss://localhost:8443/ws/agent")
+        hubURL = preferences.string("hubURL", default: Self.defaultHubURL)
         assetID = preferences.string("assetID", default: "")
         groupID = preferences.string("groupID", default: "")
         agentPort = preferences.string("agentPort", default: "8091")

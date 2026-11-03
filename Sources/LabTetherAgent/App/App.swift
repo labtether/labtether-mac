@@ -38,12 +38,6 @@ struct LabTetherAgentApp: App {
                 appState.status.setMenuVisible(false)
                 appState.refreshMenuBarLabel()
             }
-            .onChange(of: appState.shouldShowOnboarding) { shouldShow in
-                if shouldShow {
-                    openWindow(id: "onboarding")
-                    appState.shouldShowOnboarding = false
-                }
-            }
         } label: {
             let presentation = appState.menuBarLabelPresentation
 
@@ -55,6 +49,11 @@ struct LabTetherAgentApp: App {
                         .font(.system(size: 12, weight: .medium).monospacedDigit())
                 }
             }
+            // The label is on screen from launch; the menu content is built
+            // only when the menu first opens, and onChange never reports the
+            // value a view starts with. So first-launch setup opens from here.
+            .onAppear { showOnboardingIfNeeded() }
+            .onChange(of: appState.shouldShowOnboarding) { _ in showOnboardingIfNeeded() }
         }
         .menuBarExtraStyle(.window)
 
@@ -89,6 +88,13 @@ struct LabTetherAgentApp: App {
             )
         }
         .windowResizability(.contentSize)
+    }
+
+    private func showOnboardingIfNeeded() {
+        guard appState.shouldShowOnboarding else { return }
+        appState.shouldShowOnboarding = false
+        NSApp.activate(ignoringOtherApps: true)
+        openWindow(id: "onboarding")
     }
 }
 

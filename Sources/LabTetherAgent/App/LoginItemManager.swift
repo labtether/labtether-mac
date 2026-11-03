@@ -35,4 +35,18 @@ enum LoginItemManager {
     static func registrationMatches(requestedEnabled: Bool, reportedEnabled: Bool) -> Bool {
         requestedEnabled == reportedEnabled
     }
+
+    /// Setup ends with Start at login on, so the Mac comes back online after a
+    /// restart; the switch in Settings turns it off. Separate QA instances
+    /// never register. If macOS refuses, the switch shows what macOS has.
+    @MainActor
+    static func turnOnAfterSetup(
+        _ settings: AgentSettings,
+        allowed: Bool? = nil,
+        register: (Bool) -> Bool = { setEnabled($0) },
+        registered: () -> Bool = { isEnabled }
+    ) {
+        guard allowed ?? settings.allowsSystemIntegration else { return }
+        settings.startAtLogin = register(true) ? true : registered()
+    }
 }
