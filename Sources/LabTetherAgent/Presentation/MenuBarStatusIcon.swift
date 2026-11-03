@@ -13,6 +13,7 @@ enum MenuBarIconKind: String, Equatable {
     case offline
     case error
     case stopped
+    case notSetUp
 
     var accessibilityLabel: String {
         switch self {
@@ -26,22 +27,23 @@ enum MenuBarIconKind: String, Equatable {
         case .offline:       return "LabTether, disconnected"
         case .error:         return "LabTether, token refused or error"
         case .stopped:       return "LabTether, stopped"
+        case .notSetUp:      return "LabTether, not set up"
         }
     }
 
     /// The attention dot drawn on the glyph. Only states that need the person get one.
     var dot: MenuBarIconDot {
         switch self {
-        case .healthy, .connecting, .starting, .offline, .stopped: return .none
+        case .healthy, .connecting, .starting, .offline, .stopped, .notSetUp: return .none
         case .warning, .alert: return .warn
         case .critical, .criticalAlert, .error: return .bad
         }
     }
 
-    /// Starting, reconnecting, offline and stopped draw the glyph at 45 % with no dot.
+    /// Starting, reconnecting, offline, stopped and not set up draw the glyph at 45 % with no dot.
     var isDimmed: Bool {
         switch self {
-        case .connecting, .starting, .offline, .stopped: return true
+        case .connecting, .starting, .offline, .stopped, .notSetUp: return true
         default: return false
         }
     }
@@ -60,8 +62,13 @@ enum MenuBarIconResolver {
         isReachable: Bool,
         metrics: MetricsSnapshot?,
         hasFiringAlerts: Bool,
-        hasCriticalAlert: Bool = false
+        hasCriticalAlert: Bool = false,
+        isConfigured: Bool = true
     ) -> MenuBarIconKind {
+        // Nothing is wrong before setup: a calm, dimmed glyph without a dot.
+        if !isConfigured && statusState != .connected {
+            return .notSetUp
+        }
         if hasFiringAlerts {
             return hasCriticalAlert ? .criticalAlert : .alert
         }
