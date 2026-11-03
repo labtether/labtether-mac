@@ -35,6 +35,20 @@ final class BandwidthTrackerTests: XCTestCase {
 
     // MARK: - Tests
 
+    /// The pop-out showed "This session 15.9 MB" next to "Today 0 B" for the
+    /// first hour: Today and the chart counted only finished hours.
+    func testTotalsIncludeTheHourStillBeingCounted() {
+        let tracker = BandwidthTracker(filePath: makeTempFilePath())
+        let start = BandwidthTracker.hourStart(for: Date()).addingTimeInterval(60)
+        tracker.accumulate(makeSnapshot(rx: 100, tx: 50, collectedAt: start))
+        tracker.accumulate(makeSnapshot(rx: 100, tx: 50, collectedAt: start.addingTimeInterval(5)))
+
+        XCTAssertTrue(tracker.samples.isEmpty)
+        let today = BandwidthPresentation.totalForPeriod(tracker.samplesIncludingCurrentHour, days: 1)
+        XCTAssertEqual(today.rx, 500)
+        XCTAssertEqual(today.tx, 250)
+    }
+
     /// Two snapshots 5 seconds apart at 100/50 bytes/sec produce 500/250 bytes.
     func testAccumulateAddsBytes() {
         let tracker = BandwidthTracker(filePath: makeTempFilePath())
