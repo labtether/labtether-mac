@@ -2,6 +2,22 @@ import XCTest
 @testable import LabTetherAgent
 
 final class MenuBarIconResolverTests: XCTestCase {
+    /// Before setup nothing has failed: no red dot, no "token refused" for VoiceOver.
+    func testNotSetUpIsCalm() {
+        let kind = MenuBarIconResolver.resolve(
+            statusState: .error,
+            hubConnectionState: "disconnected",
+            isReachable: false,
+            metrics: nil,
+            hasFiringAlerts: false,
+            isConfigured: false
+        )
+        XCTAssertEqual(kind, .notSetUp)
+        XCTAssertEqual(kind.dot, .none)
+        XCTAssertTrue(kind.isDimmed)
+        XCTAssertEqual(kind.accessibilityLabel, "LabTether, not set up")
+    }
+
     func testResolvePrefersAlertBadgeOverEverythingElse() {
         XCTAssertEqual(
             MenuBarIconResolver.resolve(

@@ -28,8 +28,14 @@ extension AgentSettings {
         var dropped = false
         let tokenHub = storedRecord(Self.agentTokenHubKey)
         if !tokenHub.isEmpty && tokenHub != scope {
-            for name in Self.hubBoundFileNames {
-                if try removeChildFile(name) { dropped = true }
+            if hasPersistedAgentToken && isKnownSameHub(scope) {
+                // Another address of the same Hub keeps the token.
+                try allowSavedToken(forScope: scope)
+            } else {
+                for name in Self.hubBoundFileNames {
+                    if try removeChildFile(name) { dropped = true }
+                }
+                forgetHubIdentity()
             }
         }
         setStoredRecord(scope, key: Self.agentTokenHubKey)
