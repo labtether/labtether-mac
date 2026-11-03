@@ -10,20 +10,12 @@ private func debugBoot(_ message: @autoclosure () -> String) {
 
 // MARK: - Font Loader
 
-/// Registers all bundled premium fonts with Core Text at app launch.
+/// Registers the bundled mono font with Core Text at app launch.
 enum FontLoader {
-    /// Names of all TTF font files bundled under Resources/Fonts.
+    /// JetBrains Mono, bundled for log lines and paths. Everything else uses the system font.
     private static let fontFileNames: [String] = [
-        "Sora-Regular",
-        "Sora-Medium",
-        "Sora-SemiBold",
-        "Sora-Bold",
-        "Inter-Regular",
-        "Inter-Medium",
-        "Inter-SemiBold",
         "JetBrainsMono-Regular",
         "JetBrainsMono-Medium",
-        "JetBrainsMono-SemiBold",
     ]
 
     /// Registers all bundled fonts with Core Text so they are available
@@ -38,7 +30,7 @@ enum FontLoader {
             let ok = CTFontManagerRegisterFontsForURL(url as CFURL, .process, &error)
             if !ok {
                 let desc = error?.takeRetainedValue().localizedDescription ?? "unknown error"
-                debugBoot("FontLoader: failed to register \(name).ttf — \(desc)")
+                debugBoot("FontLoader: failed to register \(name).ttf: \(desc)")
             } else {
                 debugBoot("FontLoader: registered \(name).ttf")
             }

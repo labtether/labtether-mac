@@ -76,11 +76,11 @@ final class PopOutWindowController: NSObject, ObservableObject, NSWindowDelegate
         panel.titlebarAppearsTransparent = true
         panel.titleVisibility = .hidden
         panel.isMovableByWindowBackground = true
-        panel.backgroundColor = NSColor(LT.bg)
+        panel.backgroundColor = NSColor(LT.canvas)
         panel.level = .floating
         panel.hasShadow = true
         panel.minSize = NSSize(width: 380, height: 500)
-        panel.title = "LabTether Agent"
+        panel.title = "LabTether"
 
         let hostView = NSHostingView(
             rootView: PopOutRootView(

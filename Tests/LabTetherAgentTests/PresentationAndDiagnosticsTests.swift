@@ -15,8 +15,8 @@ final class AgentHeroPresentationTests: XCTestCase {
             isReachable: false
         )
 
-        XCTAssertEqual(presentation.label, "Auth Failed")
-        XCTAssertEqual(presentation.subtitle, "Local status authentication failed")
+        XCTAssertEqual(presentation.label, "Status unavailable")
+        XCTAssertEqual(presentation.subtitle, "The agent refused this app's local token")
         XCTAssertEqual(presentation.tone, .bad)
     }
 
@@ -33,8 +33,8 @@ final class AgentHeroPresentationTests: XCTestCase {
             isReachable: false
         )
 
-        XCTAssertEqual(presentation.label, "Status Unavailable")
-        XCTAssertEqual(presentation.subtitle, "Waiting for local status response")
+        XCTAssertEqual(presentation.label, "Status unavailable")
+        XCTAssertEqual(presentation.subtitle, "Waiting for the agent")
         XCTAssertEqual(presentation.tone, .warn)
     }
 
@@ -52,7 +52,7 @@ final class AgentHeroPresentationTests: XCTestCase {
         )
 
         XCTAssertEqual(presentation.label, "Connected")
-        XCTAssertEqual(presentation.subtitle, "15m · all clear")
+        XCTAssertEqual(presentation.subtitle, "up 15m")
         XCTAssertEqual(presentation.tone, .ok)
     }
 
@@ -69,7 +69,7 @@ final class AgentHeroPresentationTests: XCTestCase {
             isReachable: true
         )
 
-        XCTAssertEqual(presentation.label, "Auth Failed")
+        XCTAssertEqual(presentation.label, "Token refused")
         XCTAssertEqual(presentation.subtitle, "Hub rejected the configured token")
         XCTAssertEqual(presentation.tone, .bad)
     }
@@ -104,8 +104,8 @@ final class AgentHeroPresentationTests: XCTestCase {
             HubConnectReason(code: status.lastErrorReason)?.fix,
             "Check System Settings > Privacy & Security > Local Network and turn on LabTether Agent."
         )
-        XCTAssertEqual(subtitle(reason: nil), "Attempting to reconnect")
-        XCTAssertEqual(subtitle(reason: "something_new"), "Attempting to reconnect")
+        XCTAssertEqual(subtitle(reason: nil), "Waiting for the Hub")
+        XCTAssertEqual(subtitle(reason: "something_new"), "Waiting for the Hub")
     }
 }
 

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// A rotating arc spinner with a glow trail for loading/starting states.
+/// A small native spinner for starting and testing states.
 struct LTSpinnerArc: View {
     let color: Color
     var size: CGFloat = 16

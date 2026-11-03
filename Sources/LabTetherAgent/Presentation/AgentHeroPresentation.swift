@@ -8,11 +8,12 @@ enum AgentHeroTone: Equatable {
     case bad
 }
 
+/// The status word and the one line under it, shared by the menu bar window,
+/// the pop-out and Settings ("Connected" / "hub.lan · up 12h 28m").
 struct AgentHeroPresentation: Equatable {
     let label: String
     let subtitle: String
     let tone: AgentHeroTone
-    let breatheDuration: Double
 
     static func resolve(
         processIsRunning: Bool,
@@ -24,142 +25,108 @@ struct AgentHeroPresentation: Equatable {
         apiLastError: String?,
         hubConnectionState: String,
         isReachable: Bool,
-        apiLastErrorReason: String? = nil
+        apiLastErrorReason: String? = nil,
+        hubHost: String? = nil,
+        stoppedAt: Date? = nil
     ) -> AgentHeroPresentation {
-        let trimmedStatusError = trimmed(statusLastError)
+        let statusError = trimmed(statusLastError)
         // "transient" is the agent's retry class, not text for people.
-        let trimmedAPIError = trimmed(apiLastError).flatMap { $0 == "transient" ? nil : $0 }
+        let apiError = trimmed(apiLastError).flatMap { $0 == "transient" ? nil : $0 }
         let reason = HubConnectReason(code: apiLastErrorReason)?.summary
+        let host = trimmed(hubHost)
 
         // The wrapper marks the process as `.starting` immediately after launch
         // and log parsing may leave that state behind. Once the child process is
         // running and its authenticated local API is reachable, that API is the
-        // fresher source of truth for connected/auth-failed/disconnected state.
+        // fresher record of connected/auth-failed/disconnected state.
         if processIsStarting || (statusState == .starting && (!processIsRunning || !isReachable)) {
-            return AgentHeroPresentation(
-                label: "Starting",
-                subtitle: "Launching agent process...",
-                tone: .accent,
-                breatheDuration: 2.0
-            )
+            return AgentHeroPresentation(label: "Starting", subtitle: host ?? "", tone: .muted)
         }
 
         if !processIsRunning {
             if statusState == .error {
-                return AgentHeroPresentation(
-                    label: "Error",
-                    subtitle: trimmedStatusError ?? "Unknown error",
-                    tone: .bad,
-                    breatheDuration: 1.5
-                )
+                return AgentHeroPresentation(label: "Error", subtitle: statusError ?? "The agent stopped", tone: .bad)
             }
-            return AgentHeroPresentation(
-                label: "Stopped",
-                subtitle: "Agent is not running",
-                tone: .muted,
-                breatheDuration: 4.0
-            )
+            let since = stoppedAt.map { "since \(clockTime($0))" }
+            return AgentHeroPresentation(label: "Stopped", subtitle: joined(host, since), tone: .muted)
         }
 
         if statusState == .enrolling {
-            return AgentHeroPresentation(
-                label: "Enrolling",
-                subtitle: "Registering with hub...",
-                tone: .warn,
-                breatheDuration: 2.5
-            )
+            return AgentHeroPresentation(label: "Enrolling", subtitle: host ?? "", tone: .warn)
         }
 
         if isReachable {
             switch hubConnectionState {
             case "connected":
-                var parts: [String] = []
-                if let uptime = trimmed(apiUptime) ?? trimmed(statusUptime) {
-                    parts.append(uptime)
-                }
-                if let error = trimmedAPIError ?? trimmedStatusError {
-                    parts.append(error)
-                } else {
-                    parts.append("all clear")
-                }
+                let uptime = (trimmed(apiUptime) ?? trimmed(statusUptime)).map { "up \($0)" }
                 return AgentHeroPresentation(
                     label: "Connected",
-                    subtitle: parts.joined(separator: " · "),
-                    tone: .ok,
-                    breatheDuration: 3.0
+                    subtitle: joined(host, apiError ?? statusError ?? uptime),
+                    tone: .ok
                 )
             case "connecting":
                 return AgentHeroPresentation(
                     label: "Reconnecting",
-                    subtitle: reason ?? trimmedAPIError ?? trimmedStatusError ?? "Attempting to reconnect",
-                    tone: .warn,
-                    breatheDuration: 2.0
+                    subtitle: reason ?? apiError ?? statusError ?? host ?? "Waiting for the Hub",
+                    tone: .warn
                 )
             case "auth_failed":
                 return AgentHeroPresentation(
-                    label: "Auth Failed",
-                    subtitle: reason ?? trimmedAPIError ?? trimmedStatusError ?? "Hub authentication failed",
-                    tone: .bad,
-                    breatheDuration: 1.5
+                    label: "Token refused",
+                    subtitle: reason ?? apiError ?? statusError ?? "The Hub refused the agent token",
+                    tone: .bad
                 )
             default:
                 return AgentHeroPresentation(
                     label: "Disconnected",
-                    subtitle: trimmedAPIError ?? trimmedStatusError ?? "Hub connection unavailable",
-                    tone: .muted,
-                    breatheDuration: 2.5
+                    subtitle: apiError ?? statusError ?? host ?? "No Hub connection",
+                    tone: .muted
                 )
             }
         }
 
         if hubConnectionState == "auth_failed" {
+            // The agent's local API refused the app's own token.
             return AgentHeroPresentation(
-                label: "Auth Failed",
-                subtitle: trimmedStatusError ?? "Local status authentication failed",
-                tone: .bad,
-                breatheDuration: 1.5
+                label: "Status unavailable",
+                subtitle: statusError ?? "The agent refused this app's local token",
+                tone: .bad
             )
         }
 
         if statusState == .authFailed {
             return AgentHeroPresentation(
-                label: "Auth Failed",
-                subtitle: trimmedStatusError ?? "Hub authentication failed",
-                tone: .bad,
-                breatheDuration: 1.5
+                label: "Token refused",
+                subtitle: statusError ?? "The Hub refused the agent token",
+                tone: .bad
             )
         }
 
         if statusState == .error {
-            return AgentHeroPresentation(
-                label: "Error",
-                subtitle: trimmedStatusError ?? "Unknown error",
-                tone: .bad,
-                breatheDuration: 1.5
-            )
+            return AgentHeroPresentation(label: "Error", subtitle: statusError ?? "The agent reported an error", tone: .bad)
         }
 
         if hubConnectionState == "connecting" || statusState == .reconnecting {
             return AgentHeroPresentation(
                 label: "Reconnecting",
-                subtitle: trimmedStatusError ?? "Attempting to reconnect",
-                tone: .warn,
-                breatheDuration: 2.0
+                subtitle: statusError ?? host ?? "Waiting for the Hub",
+                tone: .warn
             )
         }
 
         return AgentHeroPresentation(
-            label: "Status Unavailable",
-            subtitle: trimmedStatusError ?? "Waiting for local status response",
-            tone: .warn,
-            breatheDuration: 2.5
+            label: "Status unavailable",
+            subtitle: statusError ?? "Waiting for the agent",
+            tone: .warn
         )
     }
 
     @MainActor static func resolve(
         agentProcess: AgentProcess,
         status: AgentStatus,
-        runtime: LocalAPIRuntimeStore
+        runtime: LocalAPIRuntimeStore,
+        settings: AgentSettings? = nil,
+        includeHost: Bool = true
     ) -> AgentHeroPresentation {
         resolve(
             processIsRunning: agentProcess.isRunning,
@@ -171,8 +138,30 @@ struct AgentHeroPresentation: Equatable {
             apiLastError: runtime.snapshot.lastError,
             hubConnectionState: runtime.snapshot.hubConnectionState,
             isReachable: runtime.snapshot.isReachable,
-            apiLastErrorReason: runtime.snapshot.lastErrorReason
+            apiLastErrorReason: runtime.snapshot.lastErrorReason,
+            hubHost: includeHost ? hubHost(from: status.hubURL.isEmpty ? (settings?.hubURL ?? "") : status.hubURL) : nil,
+            stoppedAt: status.stoppedAt
         )
+    }
+
+    /// The Hub's host name for the status line ("hub.lan"), from any accepted address form.
+    static func hubHost(from address: String) -> String? {
+        let value = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return nil }
+        let withScheme = value.contains("://") ? value : "wss://\(value)"
+        if let host = URLComponents(string: withScheme)?.host, !host.isEmpty {
+            return host
+        }
+        return nil
+    }
+
+    /// "21:12" in the user's locale.
+    static func clockTime(_ date: Date) -> String {
+        date.formatted(date: .omitted, time: .shortened)
+    }
+
+    private static func joined(_ parts: String?...) -> String {
+        parts.compactMap { $0 }.joined(separator: " · ")
     }
 
     private static func trimmed(_ value: String?) -> String? {

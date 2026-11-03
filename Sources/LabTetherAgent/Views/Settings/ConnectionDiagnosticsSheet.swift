@@ -31,15 +31,15 @@ struct ConnectionDiagnosticsSheet: View {
         VStack(alignment: .leading, spacing: 0) {
             headerSection
             Divider()
-                .background(Color.white.opacity(0.08))
+                .overlay(LT.hair)
             stepListSection
             Divider()
-                .background(Color.white.opacity(0.08))
+                .overlay(LT.hair)
             bottomBar
         }
         .frame(width: 420)
         .frame(minHeight: 360)
-        .background(LT.bg)
+        .background(LT.canvas)
         .onAppear {
             runDiagnostics()
         }
@@ -51,12 +51,12 @@ struct ConnectionDiagnosticsSheet: View {
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: LT.space8) {
             Text(L10n.diagnosticsTitle)
-                .font(LT.sora(16, weight: .semibold))
-                .foregroundStyle(LT.textPrimary)
+                .font(LT.font(16, weight: .semibold))
+                .foregroundStyle(LT.text)
 
             Text(ConnectionTester.redactedHubURL(hubURL))
                 .font(LT.mono(12))
-                .foregroundStyle(LT.textSecondary)
+                .foregroundStyle(LT.text2)
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
@@ -85,9 +85,9 @@ struct ConnectionDiagnosticsSheet: View {
     }
 
     private var placeholderText: some View {
-        Text("Press Run to start diagnostics.")
-            .font(LT.inter(13))
-            .foregroundStyle(LT.textSecondary)
+        Text("Not run yet")
+            .font(LT.font(13))
+            .foregroundStyle(LT.text2)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(LT.space20)
     }
@@ -99,9 +99,7 @@ struct ConnectionDiagnosticsSheet: View {
                 Button(L10n.diagnosticsCopyResults) {
                     copyResults()
                 }
-                .buttonStyle(.plain)
-                .font(LT.inter(13))
-                .foregroundStyle(LT.textSecondary)
+                .buttonStyle(LTSecondaryButtonStyle())
             }
 
             Spacer()
@@ -109,17 +107,13 @@ struct ConnectionDiagnosticsSheet: View {
             Button(hasRun ? L10n.diagnosticsRerun : L10n.diagnosticsRun) {
                 runDiagnostics()
             }
-            .buttonStyle(.borderedProminent)
-            .tint(LT.accent)
-            .font(LT.inter(13, weight: .medium))
+            .buttonStyle(LTPrimaryButtonStyle())
             .disabled(isRunning)
 
             Button(L10n.diagnosticsClose) {
                 dismiss()
             }
-            .buttonStyle(.plain)
-            .font(LT.inter(13))
-            .foregroundStyle(LT.textSecondary)
+            .buttonStyle(LTSecondaryButtonStyle())
         }
         .padding(.horizontal, LT.space20)
         .padding(.vertical, LT.space16)
@@ -169,8 +163,8 @@ private struct StepRow: View {
 
             VStack(alignment: .leading, spacing: LT.space4) {
                 Text(step.name)
-                    .font(LT.inter(13, weight: .medium))
-                    .foregroundStyle(LT.textPrimary)
+                    .font(LT.font(13, weight: .medium))
+                    .foregroundStyle(LT.text)
 
                 if let detail = detailText {
                     Text(detail.text)
@@ -192,7 +186,7 @@ private struct StepRow: View {
         case .pending:
             Image(systemName: "circle")
                 .font(.system(size: 13, weight: .regular))
-                .foregroundStyle(Color.white.opacity(0.25))
+                .foregroundStyle(LT.text3)
 
         case .running:
             ProgressView()
@@ -223,9 +217,9 @@ private struct StepRow: View {
         case .pending, .running:
             return nil
         case .success(let message):
-            return DetailText(text: message, color: LT.ok)
+            return DetailText(text: message, color: LT.text2)
         case .failure(let message):
-            return DetailText(text: message, color: LT.bad)
+            return DetailText(text: message, color: LT.badText)
         }
     }
 }

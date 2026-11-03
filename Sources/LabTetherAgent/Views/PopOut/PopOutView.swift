@@ -1,12 +1,10 @@
+import AppKit
 import SwiftUI
 
 // MARK: - PopOutView
 
-/// Extended floating dashboard that provides a richer, scrollable view of agent state.
-///
-/// Displays a large health orb hero section, three-column metric cards with sparklines,
-/// network statistics, firing alerts, recent log events, screen sharing status, and
-/// a horizontal action bar. An ambient orb animation runs continuously in the background.
+/// The floating panel: a canvas with sheets, problems first. Alerts, usage and
+/// recent events come first; bandwidth, sessions and Remote View follow.
 struct PopOutView: View {
     let status: AgentStatus
     let agentProcess: AgentProcess
@@ -18,73 +16,58 @@ struct PopOutView: View {
     let sessionHistory: SessionHistoryTracker
     let bandwidthTracker: BandwidthTracker
 
-    // MARK: - Body
-
     var body: some View {
-        ZStack {
-            PopOutBackground()
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: LT.space16) {
-                        Color.clear
-                            .frame(height: 1)
-                            .id(PerformanceAutomationController.popOutTopAnchorID)
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    Color.clear
+                        .frame(height: 1)
+                        .id(PerformanceAutomationController.popOutTopAnchorID)
 
-                        PopOutHeroSection(
-                            status: status,
-                            agentProcess: agentProcess,
-                            settings: settings,
-                            runtime: apiClient.runtime,
-                            metrics: apiClient.metrics
-                        )
+                    PopOutHeaderSection(
+                        status: status,
+                        agentProcess: agentProcess,
+                        settings: settings,
+                        runtime: apiClient.runtime,
+                        onOpenConsole: openConsole,
+                        onOpenDevicePage: openDevicePage
+                    )
 
-                        LTSeparator()
+                    PopOutAlertsSection(alerts: apiClient.alerts, consoleBaseURL: settings.consoleURL)
+                        .padding(.top, 20)
 
-                        PopOutSystemSection(runtime: apiClient.runtime, metrics: apiClient.metrics, agentProcess: agentProcess)
+                    PopOutUsageSection(runtime: apiClient.runtime, metrics: apiClient.metrics, agentProcess: agentProcess)
+                        .padding(.top, LT.space24)
 
-                        LTSeparator()
+                    RecentEventsSectionView(logBuffer: logBuffer)
+                        .padding(.top, LT.space24)
 
-                        PopOutBandwidthSection(tracker: bandwidthTracker)
+                    PopOutBandwidthSection(tracker: bandwidthTracker)
+                        .padding(.top, LT.space24)
 
-                        LTSeparator()
+                    PopOutSessionHistorySection(tracker: sessionHistory)
+                        .padding(.top, LT.space24)
 
-                        PopOutAlertsSection(alerts: apiClient.alerts, consoleBaseURL: settings.consoleURL)
+                    PopOutScreenSharingSection(screenSharing: screenSharing, settings: settings)
+                        .padding(.top, LT.space24)
 
-                        recentEventsSection
-
-                        PopOutSessionHistorySection(tracker: sessionHistory)
-
-                        PopOutScreenSharingSection(screenSharing: screenSharing)
-
-                        LTSeparator()
-
-                        PopOutActionBarSection(
-                            status: status,
-                            settings: settings,
-                            onOpenConsole: openConsole,
-                            onOpenDevicePage: openDevicePage
-                        )
-
-                        Color.clear
-                            .frame(height: 1)
-                            .id(PerformanceAutomationController.popOutBottomAnchorID)
-                    }
-                    .padding(LT.space16)
+                    Color.clear
+                        .frame(height: 1)
+                        .id(PerformanceAutomationController.popOutBottomAnchorID)
                 }
-                .onChange(of: automation.popOutScrollCommand) { command in
-                    guard let command else { return }
-                    withAnimation(.linear(duration: 0.28)) {
-                        proxy.scrollTo(command.targetID, anchor: command.targetID == PerformanceAutomationController.popOutTopAnchorID ? .top : .bottom)
-                    }
+                .padding(.horizontal, LT.space16)
+                .padding(.top, 34)
+                .padding(.bottom, LT.space24)
+            }
+            .onChange(of: automation.popOutScrollCommand) { command in
+                guard let command else { return }
+                withAnimation(.linear(duration: 0.28)) {
+                    proxy.scrollTo(command.targetID, anchor: command.targetID == PerformanceAutomationController.popOutTopAnchorID ? .top : .bottom)
                 }
             }
         }
-        .ltGlassBackground()
+        .background(LT.canvas)
         .frame(minWidth: 380, minHeight: 500)
-    }
-
-    private var recentEventsSection: some View {
-        RecentEventsSectionView(logBuffer: logBuffer)
     }
 
     private func openConsole() {
@@ -97,6 +80,24 @@ struct PopOutView: View {
         if let consoleURL = settings.consoleURL,
            let deviceURL = ConsoleURLBuilder.nodeURL(base: consoleURL, assetID: status.assetID) {
             NSWorkspace.shared.open(deviceURL)
+        }
+    }
+}
+
+/// Firing alerts in a sheet. Hidden when nothing is firing.
+struct PopOutAlertsSection: View {
+    @ObservedObject var alerts: LocalAPIAlertsStore
+    let consoleBaseURL: URL?
+
+    var body: some View {
+        let firing = alerts.snapshot.firingAlerts
+        if !firing.isEmpty {
+            VStack(alignment: .leading, spacing: LT.space8) {
+                LTSectionTitle(L10n.menuAlerts)
+                LTSheet {
+                    AlertRowsView(firingAlerts: firing, consoleBaseURL: consoleBaseURL, horizontalPadding: LT.space8)
+                }
+            }
         }
     }
 }

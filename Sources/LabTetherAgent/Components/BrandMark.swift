@@ -9,7 +9,7 @@ struct LTBrandMark: View {
     let size: CGFloat
 
     var body: some View {
-        Image(nsImage: NSApp.applicationIconImage)
+        Image(nsImage: NSApplication.shared.applicationIconImage)
             .resizable()
             .interpolation(.high)
             .aspectRatio(contentMode: .fit)

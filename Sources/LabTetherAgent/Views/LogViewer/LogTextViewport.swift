@@ -95,7 +95,7 @@ struct LogTextContentSignature: Equatable {
 enum LogTextDocumentBuilder {
     private static let timestampAttributes: [NSAttributedString.Key: Any] = [
         .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular),
-        .foregroundColor: NSColor(LT.textMuted)
+        .foregroundColor: NSColor(LT.text3)
     ]
 
     private static let sourceAttributes: [NSAttributedString.Key: Any] = [
@@ -105,7 +105,7 @@ enum LogTextDocumentBuilder {
     private static let messageFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
     private static let separatorAttributes: [NSAttributedString.Key: Any] = [
         .font: NSFont.monospacedSystemFont(ofSize: 10, weight: .medium),
-        .foregroundColor: NSColor(LT.textMuted)
+        .foregroundColor: NSColor(LT.text3)
     ]
 
     static func build(lines: [LogLine]) -> NSAttributedString {
@@ -143,7 +143,7 @@ enum LogTextDocumentBuilder {
 
             if line.isRoutine {
                 var attributes = sourceAttributes
-                attributes[.foregroundColor] = NSColor(LT.textMuted)
+                attributes[.foregroundColor] = NSColor(LT.text3)
                 output.append(NSAttributedString(string: "[ROUTINE] ", attributes: attributes))
             }
 
@@ -173,7 +173,7 @@ enum LogTextDocumentBuilder {
 
     private static func sourceColor(for line: LogLine) -> NSColor {
         if line.isWrapperMessage {
-            return NSColor(LT.accent)
+            return NSColor(LT.text)
         }
         return messageColor(for: line)
     }
@@ -181,14 +181,14 @@ enum LogTextDocumentBuilder {
     private static func messageColor(for line: LogLine) -> NSColor {
         switch line.level {
         case .error:
-            return NSColor(LT.bad)
+            return NSColor(LT.badText)
         case .warning:
-            return NSColor(LT.warn)
+            return NSColor(LT.warnText)
         case .info:
             if line.isRoutine {
-                return NSColor(LT.textMuted)
+                return NSColor(LT.text3)
             }
-            return line.isWrapperMessage ? NSColor(LT.accent) : NSColor(LT.textSecondary)
+            return line.isWrapperMessage ? NSColor(LT.text) : NSColor(LT.text2)
         }
     }
 }

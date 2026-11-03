@@ -125,7 +125,7 @@ final class AgentProcess: ObservableObject {
             debugBootProcess("start aborted: settings.isConfigured=false")
             status.markError(droppedOtherHubCredentials
                 ? "The Hub changed. Add an enrollment token from the new Hub in Settings."
-                : "Hub URL and token required — open Settings to configure")
+                : "Add the Hub address and a token in Settings.")
             return
         }
         let validationErrors = settings.validationErrors()

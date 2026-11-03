@@ -1,5 +1,4 @@
 import Foundation
-import SwiftUI
 
 struct MetricGaugePresentation: Equatable {
     let rawValue: Double
@@ -8,17 +7,10 @@ struct MetricGaugePresentation: Equatable {
     let fraction: Double
     let sparkline: SparklineSeries
 
-    var color: Color {
-        if rawValue >= 90 { return LT.bad }
-        if rawValue >= 75 { return LT.warn }
-        return LT.ok
-    }
+    /// Usage bars turn amber from 85 %, as in the Hub console.
+    var isHot: Bool { rawValue >= Self.hotThreshold }
 
-    static func thresholdColor(for value: Double) -> Color {
-        if value >= 90 { return LT.bad }
-        if value >= 75 { return LT.warn }
-        return LT.ok
-    }
+    static let hotThreshold: Double = 85
 }
 
 struct MetricsNetworkPresentation: Equatable {

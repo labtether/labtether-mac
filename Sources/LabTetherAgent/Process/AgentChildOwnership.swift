@@ -91,9 +91,26 @@ final class AgentChildOwnership {
         if info.pbi_status == 5 { return nil }
         // Darwin defines PROC_PIDPATHINFO_MAXSIZE as this expression; Swift cannot import that macro.
         var path = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
-        let length = proc_pidpath(pid, &path, UInt32(path.count))
-        guard length > 0 else { throw AppStateLocation.Failure.io }
+        var length = proc_pidpath(pid, &path, UInt32(path.count))
+        var attempts = 0
+        while length <= 0 {
+            // The child can exit between the two reads; then it is gone, not an error.
+            if exitedOrGone(pid, size: size) { return nil }
+            attempts += 1
+            guard attempts < 5 else { throw AppStateLocation.Failure.io }
+            Thread.sleep(forTimeInterval: 0.01)
+            length = proc_pidpath(pid, &path, UInt32(path.count))
+        }
         return Identity(pid: pid, uid: info.pbi_uid, startedSeconds: info.pbi_start_tvsec,
                         startedMicroseconds: info.pbi_start_tvusec, executable: String(cString: path))
+    }
+
+    /// True when `pid` no longer exists or is a zombie (SZOMB).
+    private static func exitedOrGone(_ pid: Int32, size: Int32) -> Bool {
+        var info = proc_bsdinfo()
+        if proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) != size {
+            return kill(pid, 0) < 0 && errno == ESRCH
+        }
+        return info.pbi_status == 5
     }
 }
