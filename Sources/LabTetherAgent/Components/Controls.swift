@@ -2,11 +2,18 @@ import SwiftUI
 
 // MARK: - LTMenuItem
 
-/// One row of the menu bar window: outlined icon, label and an optional shortcut hint.
+/// A key with its modifiers, shown as a hint ("⌘⇧P") and bound to the row.
+struct LTMenuShortcut {
+    let key: KeyEquivalent
+    var modifiers: EventModifiers = .command
+    let hint: String
+}
+
+/// One row of the menu bar window: outlined icon, label and an optional shortcut.
 struct LTMenuItem: View {
     let icon: String
     let label: String
-    var shortcut: String?
+    var shortcut: LTMenuShortcut?
     let action: () -> Void
 
     @State private var isHovered = false
@@ -20,7 +27,7 @@ struct LTMenuItem: View {
                     .foregroundStyle(LT.text)
                 Spacer(minLength: LT.space8)
                 if let shortcut {
-                    Text(shortcut)
+                    Text(shortcut.hint)
                         .font(LT.font(12).monospacedDigit())
                         .foregroundStyle(LT.text3)
                         .accessibilityHidden(true)
@@ -36,7 +43,21 @@ struct LTMenuItem: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
+        .modifier(LTMenuShortcutBinding(shortcut: shortcut))
         .accessibilityLabel(label)
+    }
+}
+
+/// Binds the row's shortcut so the hint is true while the menu is open.
+private struct LTMenuShortcutBinding: ViewModifier {
+    let shortcut: LTMenuShortcut?
+
+    func body(content: Content) -> some View {
+        if let shortcut {
+            content.keyboardShortcut(shortcut.key, modifiers: shortcut.modifiers)
+        } else {
+            content
+        }
     }
 }
 
