@@ -135,7 +135,8 @@ struct OnboardingView: View {
         .fixedSize(horizontal: false, vertical: true)
         .background(LT.canvas)
         .onAppear {
-            state.hubURL = settings.hubURL
+            // First launch shows the empty field and its example, not the built-in default.
+            state.hubURL = settings.hubURL == AgentSettings.defaultHubURL ? "" : settings.hubURL
         }
     }
 

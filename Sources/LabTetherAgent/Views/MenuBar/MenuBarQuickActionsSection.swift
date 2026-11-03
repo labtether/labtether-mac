@@ -13,7 +13,7 @@ struct MenuBarQuickActionsSection: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if settings.consoleURL != nil {
+            if settings.isConfigured, settings.consoleURL != nil {
                 LTMenuItem(icon: "globe", label: L10n.menuOpenConsole, action: onOpenConsole)
                 if !status.assetID.isEmpty {
                     LTMenuItem(icon: "lt.display", label: L10n.menuViewDevice, action: onOpenDevicePage)
