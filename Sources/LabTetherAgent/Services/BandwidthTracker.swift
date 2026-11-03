@@ -121,6 +121,21 @@ final class BandwidthTracker: ObservableObject {
         lastSampleTime = collectedAt
     }
 
+    /// The saved hourly samples plus the hour still being counted, for totals
+    /// and charts that include this hour ("Today" next to "This session").
+    var samplesIncludingCurrentHour: [BandwidthSample] {
+        guard let hour = currentHourStart, hourlyRX > 0 || hourlyTX > 0 else { return samples }
+        var merged = samples
+        if let index = merged.firstIndex(where: { $0.date == hour }) {
+            merged[index].rxBytes += hourlyRX
+            merged[index].txBytes += hourlyTX
+        } else {
+            merged.append(BandwidthSample(date: hour, rxBytes: hourlyRX, txBytes: hourlyTX))
+            merged.sort { $0.date < $1.date }
+        }
+        return merged
+    }
+
     /// Resets the current session counters and in-progress hourly accumulator.
     ///
     /// Any in-progress hourly data is flushed to `samples` before the reset so

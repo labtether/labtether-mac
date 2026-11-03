@@ -15,11 +15,12 @@ struct PopOutBandwidthSection: View {
                 } else {
                     VStack(alignment: .leading, spacing: 0) {
                         row(L10n.bandwidthThisSession, rx: tracker.currentSessionRX, tx: tracker.currentSessionTX)
-                        let today = BandwidthPresentation.totalForPeriod(tracker.samples, days: 1)
+                        let hours = tracker.samplesIncludingCurrentHour
+                        let today = BandwidthPresentation.totalForPeriod(hours, days: 1)
                         row(L10n.bandwidthToday, rx: today.rx, tx: today.tx)
-                        let period = BandwidthPresentation.totalForPeriod(tracker.samples, days: 30)
+                        let period = BandwidthPresentation.totalForPeriod(hours, days: 30)
                         row(L10n.bandwidthLast30Days, rx: period.rx, tx: period.tx)
-                        let bars = barChartData()
+                        let bars = barChartData(hours)
                         if bars.contains(where: { $0.total > 0 }) {
                             barChart(bars: bars)
                                 .padding(EdgeInsets(top: LT.space4, leading: LT.space12, bottom: LT.space8, trailing: LT.space12))
@@ -76,7 +77,7 @@ struct PopOutBandwidthSection: View {
         .accessibilityLabel("Bandwidth for the last 7 days")
     }
 
-    private func barChartData() -> [DayBar] {
+    private func barChartData(_ hours: [BandwidthSample]) -> [DayBar] {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
         let formatter = DateFormatter()
@@ -85,7 +86,7 @@ struct PopOutBandwidthSection: View {
         return (0..<7).compactMap { offset -> DayBar? in
             guard let dayStart = calendar.date(byAdding: .day, value: -(6 - offset), to: today),
                   let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return nil }
-            let total = tracker.samples
+            let total = hours
                 .filter { $0.date >= dayStart && $0.date < dayEnd }
                 .reduce(UInt64(0)) { $0 + $1.rxBytes + $1.txBytes }
             return DayBar(id: dayStart, label: formatter.string(from: dayStart), total: total)
