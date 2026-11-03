@@ -56,7 +56,8 @@ final class OnboardingState: ObservableObject {
         connectionTestResult = result
     }
 
-    /// Writes the draft into `settings` and marks setup complete.
+    /// Writes the draft into `settings`, marks setup complete and turns on
+    /// Start at login.
     func applyToSettings(_ settings: AgentSettings) {
         settings.hubURL = hubURL.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -72,6 +73,7 @@ final class OnboardingState: ObservableObject {
         settings.assetID = assetID.trimmingCharacters(in: .whitespacesAndNewlines)
         settings.groupID = groupID.trimmingCharacters(in: .whitespacesAndNewlines)
         settings.hasCompletedOnboarding = true
+        LoginItemManager.turnOnAfterSetup(settings)
         settings.markChanged()
     }
 }
