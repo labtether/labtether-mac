@@ -130,6 +130,7 @@ struct SettingsConnectionTab: View {
                 }
             }
             .buttonStyle(LTSecondaryButtonStyle())
+            .fixedSize()   // the result beside it wraps; the label is never cut ("Test conne…")
             .disabled(isTestingConnection || trust.offer != nil)
             .accessibilityIdentifier("settings-test-connection")
             .accessibilityHint("Tests the connection to the Hub")
@@ -141,6 +142,7 @@ struct SettingsConnectionTab: View {
             if connectionTestResult != nil {
                 Button(L10n.settingsFullDiagnostics) { showDiagnosticsSheet = true }
                     .buttonStyle(LTTextButtonStyle(fontSize: 12))
+                    .fixedSize()
             }
         }
     }
@@ -172,6 +174,7 @@ struct ConnectionTestResultText: View {
                 .foregroundStyle(LT.badText)
                 .lineLimit(2)
                 .truncationMode(.middle)
+                .fixedSize(horizontal: false, vertical: true)
                 .help(message)
         case nil:
             EmptyView()

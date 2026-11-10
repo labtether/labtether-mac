@@ -249,6 +249,7 @@ struct OnboardingView: View {
                             }
                         }
                         .buttonStyle(LTSecondaryButtonStyle())
+                        .fixedSize()
                         .disabled(state.isTesting || trust.offer != nil
                                   || AgentSettingsNormalization.canonicalHubWebSocketURL(from: state.hubURL) == nil)
                         ConnectionTestResultText(result: state.connectionTestResult)
