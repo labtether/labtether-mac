@@ -5,6 +5,10 @@ import UniformTypeIdentifiers
 /// Settings › Security: certificate checks for wss:// Hubs.
 struct SettingsSecurityTab: View {
     @ObservedObject var settings: AgentSettings
+    /// What is in the field. It becomes the setting only when the file
+    /// verifies the Hub alone; until then the saved setting stays.
+    @State private var caDraft = ""
+    @State private var caError: String?
 
     var body: some View {
         SettingsSection("TLS", footnote: "Applies to wss:// Hubs. A CA file keeps certificate checks on.") {
@@ -13,17 +17,35 @@ struct SettingsSecurityTab: View {
                 isOn: $settings.tlsSkipVerify,
                 onChange: { settings.markChanged() }
             )
-            LTFormRow(label: "CA certificate") {
-                HStack(spacing: LT.space8) {
-                    LTTextField(
-                        label: "CA certificate",
-                        text: $settings.tlsCAFile,
-                        prompt: "/Users/demo/hub-ca.pem",
-                        onChange: { settings.markChanged() }
-                    )
-                    Button("Browse…", action: browseCAFile)
-                        .buttonStyle(LTSecondaryButtonStyle())
+            LTFormRow(label: "CA certificate", alignment: caError == nil ? .center : .top) {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: LT.space8) {
+                        LTTextField(
+                            label: "CA certificate",
+                            text: $caDraft,
+                            prompt: "/Users/demo/hub-ca.pem",
+                            hasError: caError != nil
+                        )
+                        Button("Browse…", action: browseCAFile)
+                            .buttonStyle(LTSecondaryButtonStyle())
+                    }
+                    if let caError { LTFieldError(text: caError) }
                 }
+            }
+            .onAppear { caDraft = settings.tlsCAFile }
+            .onChange(of: settings.tlsCAFile) { caDraft = $0 }
+            .task(id: caDraft) {
+                let draft = caDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard draft != settings.tlsCAFile.trimmingCharacters(in: .whitespacesAndNewlines) else {
+                    caError = nil
+                    return
+                }
+                try? await Task.sleep(nanoseconds: 700_000_000)
+                guard !Task.isCancelled else { return }
+                let words = await settings.chooseCAFile(draft)
+                guard !Task.isCancelled else { return }
+                caError = words
+                if words == nil { settings.markChanged() }
             }
             if let fingerprint = trustedHubFingerprint {
                 LTFormRow(label: "Trusted Hub", alignment: .top) {
@@ -58,8 +80,7 @@ struct SettingsSecurityTab: View {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         if panel.runModal() == .OK, let url = panel.url {
-            settings.tlsCAFile = url.path
-            settings.markChanged()
+            caDraft = url.path   // checked against the Hub, then saved
         }
     }
 }

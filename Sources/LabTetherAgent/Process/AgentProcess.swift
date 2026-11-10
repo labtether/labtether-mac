@@ -34,6 +34,9 @@ final class AgentProcess: ObservableObject {
     /// Words for the line the agent printed when it refused to start, if it did.
     private var startRefusal: String?
     var checkingHubChange = false
+    var checkingChosenCA = false
+    /// The saved CA file was checked for the start now under way.
+    var chosenCACheckedForThisStart = false
     let crashCoordinator = CrashRestartCoordinator()
 
     private var settingsObserver: AnyCancellable?
@@ -102,6 +105,7 @@ final class AgentProcess: ObservableObject {
         debugBootProcess("start called resetCrashHistory=\(resetCrashHistory) process_nil=\(process == nil) isStarting=\(isStarting)")
         guard process == nil && !isStarting else { return }
         guard hubChangeSettled(then: { [weak self] in self?.start(resetCrashHistory: resetCrashHistory) }) else { return }
+        guard chosenCASettled(then: { [weak self] in self?.start(resetCrashHistory: resetCrashHistory) }) else { return }
         cancelCrashRestart()
 
         if resetCrashHistory {
@@ -218,6 +222,7 @@ final class AgentProcess: ObservableObject {
         self.process = proc
         self.isRunning = true
         self.isStarting = false
+        self.chosenCACheckedForThisStart = false   // the next start checks again
         status.markStarting(pid: proc.processIdentifier)
 
         logBuffer.append("[app] Agent started (PID \(proc.processIdentifier))")

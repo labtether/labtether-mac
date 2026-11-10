@@ -65,9 +65,11 @@ enum AgentEnvironmentBuilder {
         // A CA the person chose or trusted is the agent's only root for the
         // Hub. Without a usable file the agent is not started on weaker terms.
         var pinnedCAFile = ""
+        var pinnedCAOnly = false
         switch settings.hubCAPin {
         case .none: break
-        case .file(let path): pinnedCAFile = path
+        case .file(let path): pinnedCAFile = path; pinnedCAOnly = true
+        case .alongside(let path): pinnedCAFile = path
         case .unusable(let words): throw AgentSettingsSecretError(message: words)
         }
         env.merge(connectionIntentEnvironment(
@@ -75,7 +77,8 @@ enum AgentEnvironmentBuilder {
             enrollmentToken: trimmedEnrollmentToken,
             hasPersistedEnrollmentToken: settings.enrollmentTokenFile == .tied,
             tlsSkipVerify: settings.tlsSkipVerify,
-            tlsCAFile: pinnedCAFile
+            tlsCAFile: pinnedCAFile,
+            tlsCAOnly: pinnedCAOnly
         )) { _, new in new }
         env["AGENT_PORT"] = settings.normalizedAgentPort()
         env["LABTETHER_DOCKER_ENABLED"] = settings.normalizedDockerMode()
@@ -192,15 +195,17 @@ enum AgentEnvironmentBuilder {
     }
 
     /// These entries are merged into the Go child's launch environment.
-    /// Group selection is one-use; a custom CA always keeps verification on,
-    /// and is the only root for the Hub (`tlsCAFile` is a CA the person chose
-    /// or trusted; the variable is never set without it).
+    /// Group selection is one-use; a custom CA always keeps verification on.
+    /// `tlsCAOnly` makes it the only root for the Hub: for a CA the person
+    /// trusted, or chose and that was shown to verify the Hub alone. The
+    /// variable is never set without a CA file.
     static func connectionIntentEnvironment(
         groupID: String,
         enrollmentToken: String,
         hasPersistedEnrollmentToken: Bool,
         tlsSkipVerify: Bool,
-        tlsCAFile: String
+        tlsCAFile: String,
+        tlsCAOnly: Bool = false
     ) -> [String: String] {
         var env: [String: String] = [:]
         let trimmedGroupID = groupID.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -215,7 +220,7 @@ enum AgentEnvironmentBuilder {
         }
         if !caFile.isEmpty {
             env["LABTETHER_TLS_CA_FILE"] = caFile
-            env["LABTETHER_TLS_CA_ONLY"] = "true"
+            if tlsCAOnly { env["LABTETHER_TLS_CA_ONLY"] = "true" }
         }
         return env
     }

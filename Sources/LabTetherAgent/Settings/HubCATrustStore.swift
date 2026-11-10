@@ -26,6 +26,9 @@ extension AgentSettings {
         case none
         /// This file is the only root.
         case file(String)
+        /// A CA file chosen in Settings that has not been shown to verify the
+        /// Hub alone: used as before 2.0, beside the system's roots.
+        case alongside(String)
         /// A CA was chosen or trusted, but its file cannot be used. The agent
         /// is not started on weaker terms; the words say what to do.
         case unusable(String)
@@ -40,8 +43,12 @@ extension AgentSettings {
         let chosen = tlsCAFile.trimmingCharacters(in: .whitespacesAndNewlines)
         if !chosen.isEmpty {
             // A missing file is named by the settings check before any start.
-            guard FileManager.default.fileExists(atPath: chosen) else { return .file(chosen) }
-            return Self.firstFingerprint(inPEMFile: chosen) != nil ? .file(chosen) : .unusable(Self.chosenCAUnusableMessage)
+            guard FileManager.default.fileExists(atPath: chosen) else { return .alongside(chosen) }
+            guard let fingerprint = Self.firstFingerprint(inPEMFile: chosen) else {
+                return .unusable(Self.chosenCAUnusableMessage)
+            }
+            // Only once it verified the Hub alone; see ChosenHubCA.
+            return chosenCAIsVerified(fingerprint: fingerprint, forHubURL: hubURL) ? .file(chosen) : .alongside(chosen)
         }
         guard let scope = pendingHubScope, let trusted = trustedHubCAFingerprint(for: scope) else { return .none }
         guard Self.firstFingerprint(inPEMFile: managedHubCAPath) == trusted else {
@@ -56,8 +63,10 @@ extension AgentSettings {
     func hubCAIsOnlyRoot(forHubURL hubURL: String) -> Bool {
         let file = effectiveTLSCAFile(forHubURL: hubURL)
         if file.isEmpty { return false }
-        if file != managedHubCAPath { return true }   // chosen in Settings, or trusted and waiting
-        return hubScope(of: hubURL).flatMap { trustedHubCAFingerprint(for: $0) } != nil
+        if file == pendingHubCAPath { return true }   // trusted for exactly this Hub, waiting
+        if file == managedHubCAPath { return hubScope(of: hubURL).flatMap { trustedHubCAFingerprint(for: $0) } != nil }
+        // Chosen in Settings: the only root once it verified the Hub alone.
+        return Self.firstFingerprint(inPEMFile: file).map { chosenCAIsVerified(fingerprint: $0, forHubURL: hubURL) } ?? false
     }
 
     /// The fingerprint the person trusted for `scope`: recorded for that

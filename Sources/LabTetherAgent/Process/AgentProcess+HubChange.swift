@@ -37,6 +37,25 @@ extension AgentProcess {
         return false
     }
 
+    /// A CA file saved before it had to verify the Hub alone is checked once
+    /// per start. When it passes it is the agent's only root from this start
+    /// on; when it does not, or the Hub does not answer, the agent starts
+    /// with it as before and one line says so.
+    func chosenCASettled(then retry: @escaping @MainActor () -> Void) -> Bool {
+        guard settings.chosenCANeedsCheck, !chosenCACheckedForThisStart else { return true }
+        guard !checkingChosenCA else { return false }
+        checkingChosenCA = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let line = await self.settings.checkSavedChosenCA()
+            self.checkingChosenCA = false
+            self.chosenCACheckedForThisStart = true
+            if let line { self.logBuffer.append("[app] \(line)") }
+            retry()
+        }
+        return false
+    }
+
     private func confirmOtherHub(_ verdict: HubChangeVerdict) -> Bool {
         let alert = NSAlert()
         alert.alertStyle = .warning

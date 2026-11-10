@@ -111,7 +111,7 @@ final class AgentSettingsNormalizationTests: XCTestCase {
         XCTAssertEqual(pending["LABTETHER_WEBRTC_ENABLED"], "false")
         XCTAssertFalse(settings.validationErrors().contains { $0.contains("Capture FPS") })
         XCTAssertEqual(pending["LABTETHER_TLS_CA_FILE"], "/qa/hub-ca.pem")
-        XCTAssertEqual(pending["LABTETHER_TLS_CA_ONLY"], "true", "a chosen CA file is the agent's only root")
+        XCTAssertNil(pending["LABTETHER_TLS_CA_ONLY"], "a chosen CA file is the only root only once it verified the Hub alone")
         XCTAssertNil(pending["LABTETHER_TLS_SKIP_VERIFY"])
         XCTAssertEqual(pending["LABTETHER_ENROLLMENT_TOKEN_FILE"], settings.enrollmentTokenFilePath)
 
