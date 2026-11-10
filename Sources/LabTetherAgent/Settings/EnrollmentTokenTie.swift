@@ -93,4 +93,12 @@ extension AgentSettings {
     func removeEnrollmentTokenTie() {
         _ = try? removeChildFile(Self.enrollmentTokenTieName)
     }
+
+    /// The agent removes the token file itself once it has used it. The tie
+    /// left behind would otherwise tie a token file written later, for any
+    /// Hub, to the Hub this one was made for.
+    func removeEnrollmentTokenTieIfTokenUsed() {
+        guard !hasPersistedEnrollmentToken else { return }
+        removeEnrollmentTokenTie()
+    }
 }

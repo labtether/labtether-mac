@@ -110,6 +110,29 @@ final class EnrollmentTokenTieTests: XCTestCase {
         XCTAssertEqual(try settings.buildEnvironment()["LABTETHER_TLS_CA_ONLY"], "true")
     }
 
+    /// The agent used the token and removed its file. The tie left behind must
+    /// not tie a token file written later (for any Hub) to this Hub.
+    func testATieGoesOnceItsTokenWasUsed() throws {
+        let (settings, _, cleanup) = try makeSettings()
+        defer { cleanup() }
+        settings.hubURL = hubA
+        try installToken(settings, tie: #"{"hub_url":"wss://nas01.example.com:8443"}"#)
+        try FileManager.default.removeItem(atPath: settings.enrollmentTokenFilePath)   // used by the agent
+        settings.removeEnrollmentTokenTieIfTokenUsed()                                  // on connecting
+        XCTAssertNil(settings.enrollmentTokenTie)
+
+        // A later file, made for some Hub, without a tie of its own.
+        try Data("token-from-elsewhere\n".utf8).write(to: URL(fileURLWithPath: settings.enrollmentTokenFilePath))
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: settings.enrollmentTokenFilePath)
+        XCTAssertEqual(settings.enrollmentTokenFile, .untied)
+        XCTAssertNil(try settings.buildEnvironment()["LABTETHER_ENROLLMENT_TOKEN_FILE"])
+
+        // While a token file is there, its tie stays.
+        try installToken(settings, tie: #"{"hub_url":"wss://nas01.example.com:8443"}"#)
+        settings.removeEnrollmentTokenTieIfTokenUsed()
+        XCTAssertEqual(settings.enrollmentTokenFile, .tied)
+    }
+
     /// A tie that names another CA than the chosen file: the token is held back.
     func testATieNamingAnotherCAHoldsTheTokenBack() throws {
         let (settings, folder, cleanup) = try makeSettings()

@@ -129,6 +129,7 @@ final class AppState: ObservableObject {
             .filter { $0 == .connected }
             .sink { [weak self] _ in
                 self?.settings.refreshHubConsoleURL()
+                self?.settings.removeEnrollmentTokenTieIfTokenUsed()
                 self?.agentProcess.recheckChosenCAAfterConnect()
             }
 
