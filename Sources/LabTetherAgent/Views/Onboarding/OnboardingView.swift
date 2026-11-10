@@ -111,10 +111,10 @@ struct OnboardingView: View {
 
             VStack(alignment: .leading, spacing: 0) {
                 form
-                LTDisclosureRow(title: L10n.onboardingAdvanced, detail: "Asset ID, group ID", isExpanded: $showAdvanced)
-                    .onChange(of: showAdvanced) { _ in
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { SetupWindowSizer.fitToContent() }
-                    }
+                // Not animated: the window follows its content only for plain
+                // changes, and an animated one left Connect below the bottom edge.
+                LTDisclosureRow(title: L10n.onboardingAdvanced, detail: "Asset ID, group ID",
+                                isExpanded: $showAdvanced, animated: false)
                     .padding(.top, LT.space12)
                 if showAdvanced {
                     advancedFields
@@ -218,24 +218,5 @@ struct OnboardingView: View {
             agentProcess.start()
         }
         dismiss()
-    }
-}
-
-/// The setup window keeps the size it opened with, so opening Advanced pushed
-/// Connect below its bottom edge. This fits the window to its content again,
-/// keeping its top edge where it is.
-enum SetupWindowSizer {
-    static let title = "Set up LabTether"
-
-    @MainActor
-    static func fitToContent() {
-        guard let window = NSApp.windows.first(where: { $0.title == title }),
-              let content = window.contentView else { return }
-        content.layoutSubtreeIfNeeded()
-        let height = content.fittingSize.height
-        guard height > 0, abs(height - content.frame.height) > 1 else { return }
-        var frame = window.frameRect(forContentRect: NSRect(x: 0, y: 0, width: content.frame.width, height: height))
-        frame.origin = NSPoint(x: window.frame.minX, y: window.frame.maxY - frame.height)
-        window.setFrame(frame, display: true, animate: true)
     }
 }

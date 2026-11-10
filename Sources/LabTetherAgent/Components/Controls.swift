@@ -82,10 +82,16 @@ struct LTDisclosureRow: View {
     let title: String
     let detail: String
     @Binding var isExpanded: Bool
+    /// Off where the window itself must resize with the content (setup).
+    var animated = true
 
     var body: some View {
         Button {
-            withAnimation(.easeInOut(duration: LT.animNormal)) { isExpanded.toggle() }
+            if animated {
+                withAnimation(.easeInOut(duration: LT.animNormal)) { isExpanded.toggle() }
+            } else {
+                isExpanded.toggle()
+            }
         } label: {
             HStack(spacing: LT.space6) {
                 Image(systemName: "chevron.right")

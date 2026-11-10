@@ -73,7 +73,7 @@ struct LabTetherAgentApp: App {
         }
         .defaultSize(width: 700, height: 500)
 
-        Window(SetupWindowSizer.title, id: "onboarding") {
+        Window("Set up LabTether", id: "onboarding") {
             OnboardingView(
                 settings: appState.settings,
                 agentProcess: appState.agentProcess
