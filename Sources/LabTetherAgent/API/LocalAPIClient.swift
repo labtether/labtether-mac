@@ -166,11 +166,27 @@ final class LocalAPIClient: ObservableObject {
     /// Exposed for UI redraw control in MenuBarExtra label updates.
     var isMenuVisible: Bool { visibility.menuVisible }
 
-    /// Effective interval after applying exponential backoff from consecutive failures.
-    private var effectiveInterval: TimeInterval {
+    /// The child needs a moment to open its local API. Until it first answers
+    /// after a start, the client asks again every second whatever is on
+    /// screen. Without this the refused first poll was retried at the hidden
+    /// rate, and "Status unavailable" stayed up for 30 s after every Start
+    /// and Restart.
+    private var startupDeadline: Date?
+    private var isStartingUp: Bool { startupDeadline.map { Date() < $0 } ?? false }
+
+    /// Seconds until the next poll: one second while starting up, otherwise
+    /// the base interval with exponential backoff from consecutive failures.
+    var nextPollInterval: TimeInterval {
+        if isStartingUp { return 1 }
         guard consecutiveFailures > 0 else { return baseInterval }
         let backoff = baseInterval * pow(2, Double(consecutiveFailures - 1))
         return min(backoff, maxInterval)
+    }
+
+    /// What `start` does before its first poll.
+    func beginStartup(window: TimeInterval = 20) {
+        startupDeadline = Date().addingTimeInterval(window)
+        consecutiveFailures = 0
     }
 
     init() {
@@ -186,7 +202,7 @@ final class LocalAPIClient: ObservableObject {
         let trimmedAuthToken = authToken?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         self.authToken = trimmedAuthToken.isEmpty ? nil : trimmedAuthToken
         isPolling = true
-        consecutiveFailures = 0
+        beginStartup()
         status = nil
         runtime.reset()
         metrics.reset(clearHistory: true)
@@ -220,7 +236,9 @@ final class LocalAPIClient: ObservableObject {
         latestReachable = false
         latestHubConnectionState = "disconnected"
         knownAlertIDs.removeAll()
-        visibility.reset()
+        startupDeadline = nil
+        // What is on screen does not change when the agent stops: the menu
+        // can stay open across Stop and Start.
     }
 
     /// Notifies the client whether the menu bar popover is currently visible.
@@ -332,7 +350,7 @@ final class LocalAPIClient: ObservableObject {
 
     private func scheduleNextPoll() {
         statusTimer?.invalidate()
-        statusTimer = Timer.scheduledTimer(withTimeInterval: effectiveInterval, repeats: false) { [weak self] _ in
+        statusTimer = Timer.scheduledTimer(withTimeInterval: nextPollInterval, repeats: false) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.poll()
                 self?.scheduleNextPoll()
@@ -440,6 +458,7 @@ final class LocalAPIClient: ObservableObject {
     }
 
     func applyNotModifiedPollResult() {
+        startupDeadline = nil
         latestReachable = true
         if let latest = latestStatusSnapshot {
             latestHubConnectionState = latest.connectionState ?? (latest.connected ? "connected" : "disconnected")
@@ -461,6 +480,7 @@ final class LocalAPIClient: ObservableObject {
     }
 
     func applySuccessfulPollResult(_ decoded: AgentStatusResponse) {
+        startupDeadline = nil
         latestStatusSnapshot = decoded
         latestReachable = true
         latestHubConnectionState = decoded.connectionState ?? (decoded.connected ? "connected" : "disconnected")
@@ -485,10 +505,12 @@ final class LocalAPIClient: ObservableObject {
         )
         alerts.reset()
         metadata.reset()
-        consecutiveFailures += 1
+        // Refusals while the child starts are expected and do not back off.
+        if !isStartingUp { consecutiveFailures += 1 }
     }
 
     func applyPollAuthFailure() {
+        startupDeadline = nil
         status = nil
         statusETag = nil
         latestStatusSnapshot = nil
