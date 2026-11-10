@@ -27,6 +27,20 @@ final class AgentHeroPresentationTests: XCTestCase {
         XCTAssertEqual(hero.tone, .warn)
     }
 
+    /// The agent's one line for a start it refuses becomes words in the menu,
+    /// not "Exited with code 1".
+    func testTheAgentsRefusedStartIsSaidInWords() {
+        let line = "2026/11/10 19:00:00 LABTETHER_TLS_CA_ONLY is on but the CA file /Users/demo/ca.crt cannot be read: set LABTETHER_TLS_CA_FILE to the Hub's CA certificate, or turn LABTETHER_TLS_CA_ONLY off"
+        XCTAssertEqual(
+            AgentStartRefusal.words(forLogLine: line),
+            "The Hub's CA certificate cannot be read. Trust the Hub again with Test connection in Settings › Connection."
+        )
+        XCTAssertNil(AgentStartRefusal.words(forLogLine: "agentws: connected to wss://nas01.example.com:8443/ws/agent"))
+        XCTAssertNil(AgentStartRefusal.words(
+            forLogLine: "the Hub's certificate is not signed by the CA in LABTETHER_TLS_CA_FILE, and LABTETHER_TLS_CA_ONLY=true trusts nothing else."
+        ), "an untrusted Hub is not a refused start; the agent keeps running and says so in its status")
+    }
+
     /// A refused enrollment must show the Hub's reason, not "Reconnecting".
     func testRefusedEnrollmentShowsTheHubsWords() {
         let hero = AgentHeroPresentation.resolve(

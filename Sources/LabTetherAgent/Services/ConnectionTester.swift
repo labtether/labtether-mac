@@ -107,7 +107,8 @@ enum ConnectionTester {
     static func quickTest(
         hubURL: String,
         tlsSkipVerify: Bool = false,
-        tlsCAFile: String = ""
+        tlsCAFile: String = "",
+        tlsCAOnly: Bool = false
     ) async -> ConnectionTestResult {
         guard let identityURL = hubIdentityURL(from: hubURL) else {
             return .failure(error: "Invalid hub URL.")
@@ -118,7 +119,8 @@ enum ConnectionTester {
             let response = try await probeHub(
                 url: identityURL,
                 tlsSkipVerify: tlsSkipVerify,
-                tlsCAFile: tlsCAFile
+                tlsCAFile: tlsCAFile,
+                tlsCAOnly: tlsCAOnly
             )
             let elapsed = Int(Date().timeIntervalSince(start) * 1_000)
             if let validationError = hubIdentityValidationError(
@@ -341,7 +343,8 @@ enum ConnectionTester {
     static func probeHub(
         url: URL,
         tlsSkipVerify: Bool,
-        tlsCAFile: String
+        tlsCAFile: String,
+        tlsCAOnly: Bool = false
     ) async throws -> HubProbeResponse {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 10
@@ -353,7 +356,8 @@ enum ConnectionTester {
         // when certificate verification remains enabled.
         let delegate = HubProbeSessionDelegate(
             tlsSkipVerify: AgentEnvironmentBuilder.effectiveTLSSkipVerify(tlsSkipVerify, caFile: tlsCAFile),
-            trustedCertificates: trustedCertificates
+            trustedCertificates: trustedCertificates,
+            trustedOnly: tlsCAOnly
         )
         let session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
         defer { session.invalidateAndCancel() }
@@ -532,14 +536,17 @@ enum ConnectionTester {
 private final class HubProbeSessionDelegate: NSObject, URLSessionDelegate, URLSessionTaskDelegate {
     private let tlsSkipVerify: Bool
     private let trustedCertificates: [SecCertificate]
+    /// The CA file is the only root, as for an agent with LABTETHER_TLS_CA_ONLY.
+    private let trustedOnly: Bool
     private let lock = NSLock()
     private var refused = false
     /// True once a chain failed against the configured CA.
     var refusedCertificate: Bool { lock.lock(); defer { lock.unlock() }; return refused }
 
-    init(tlsSkipVerify: Bool, trustedCertificates: [SecCertificate]) {
+    init(tlsSkipVerify: Bool, trustedCertificates: [SecCertificate], trustedOnly: Bool) {
         self.tlsSkipVerify = tlsSkipVerify
         self.trustedCertificates = trustedCertificates
+        self.trustedOnly = trustedOnly
     }
 
     func urlSession(
@@ -580,7 +587,7 @@ private final class HubProbeSessionDelegate: NSObject, URLSessionDelegate, URLSe
 
         if !trustedCertificates.isEmpty {
             SecTrustSetAnchorCertificates(serverTrust, trustedCertificates as CFArray)
-            SecTrustSetAnchorCertificatesOnly(serverTrust, false)
+            SecTrustSetAnchorCertificatesOnly(serverTrust, trustedOnly)
             guard SecTrustEvaluateWithError(serverTrust, nil) else {
                 lock.lock(); refused = true; lock.unlock()
                 completionHandler(.cancelAuthenticationChallenge, nil)

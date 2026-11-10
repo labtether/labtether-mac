@@ -13,6 +13,68 @@ extension AgentSettings {
     static let pendingHubCAName = "pending-hub-ca.crt"
     /// The Hub ("wss://host:port") the waiting CA was trusted for.
     static let pendingHubCAScopeRecord = "pendingHubCAScope"
+    /// "<scope> <fingerprint>" of the CA the person trusted for a Hub with
+    /// "Trust this Hub". A `ca.crt` without this record is one the agent kept
+    /// from an enrollment answer; nobody chose it.
+    static let trustedHubCARecord = "trustedHubCA"
+
+    /// What the agent is given as the only root for the Hub's connections
+    /// (`LABTETHER_TLS_CA_ONLY`): the system's roots then count for nothing,
+    /// so a publicly trusted certificate on the Hub's name is refused too.
+    enum HubCAPin: Equatable {
+        /// No CA of the person's choosing: the agent verifies as before.
+        case none
+        /// This file is the only root.
+        case file(String)
+        /// A CA was chosen or trusted, but its file cannot be used. The agent
+        /// is not started on weaker terms; the words say what to do.
+        case unusable(String)
+    }
+
+    static let chosenCAUnusableMessage = "The CA certificate file in Settings › Security cannot be read."
+    static let trustedCAUnusableMessage =
+        "The certificate this Mac trusted for the Hub is missing. Trust the Hub again with Test connection in Settings › Connection."
+
+    /// A CA file chosen in Settings, or the CA trusted for the Hub in use.
+    var hubCAPin: HubCAPin {
+        let chosen = tlsCAFile.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !chosen.isEmpty {
+            // A missing file is named by the settings check before any start.
+            guard FileManager.default.fileExists(atPath: chosen) else { return .file(chosen) }
+            return Self.firstFingerprint(inPEMFile: chosen) != nil ? .file(chosen) : .unusable(Self.chosenCAUnusableMessage)
+        }
+        guard let scope = pendingHubScope, let trusted = trustedHubCAFingerprint(for: scope) else { return .none }
+        guard Self.firstFingerprint(inPEMFile: managedHubCAPath) == trusted else {
+            return .unusable(Self.trustedCAUnusableMessage)
+        }
+        return .file(managedHubCAPath)
+    }
+
+    /// True when the CA file a check of `hubURL` uses is the only root: one
+    /// the person chose or trusted. The app's own checks then judge a Hub the
+    /// way the agent will.
+    func hubCAIsOnlyRoot(forHubURL hubURL: String) -> Bool {
+        let file = effectiveTLSCAFile(forHubURL: hubURL)
+        if file.isEmpty { return false }
+        if file != managedHubCAPath { return true }   // chosen in Settings, or trusted and waiting
+        return hubScope(of: hubURL).flatMap { trustedHubCAFingerprint(for: $0) } != nil
+    }
+
+    /// The fingerprint the person trusted for `scope`: recorded for that
+    /// address, or for the token's Hub when the address is known to be it.
+    private func trustedHubCAFingerprint(for scope: String) -> String? {
+        let parts = storedRecord(Self.trustedHubCARecord).split(separator: " ").map(String.init)
+        guard parts.count == 2 else { return nil }
+        if parts[0] == scope { return parts[1] }
+        if parts[0] == savedTokenScope, isKnownSameHub(scope) { return parts[1] }
+        return nil
+    }
+
+    private static func firstFingerprint(inPEMFile path: String) -> String? {
+        guard let data = FileManager.default.contents(atPath: path), data.count <= 1_048_576,
+              let text = String(data: data, encoding: .utf8) else { return nil }
+        return HubCATrust.certificates(fromPEM: text).first.map { HubCATrust.fingerprint(of: $0) }
+    }
 
     var managedHubCAPath: String {
         appSupportDirectory.appendingPathComponent(Self.managedHubCAName).path
@@ -63,9 +125,10 @@ extension AgentSettings {
         if waits {
             // Nothing about the token's Hub changes until the move is confirmed.
             setStoredRecord(hubScope(of: hubURL) ?? "", key: Self.pendingHubCAScopeRecord)
-        } else if !tlsCAFile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            tlsCAFile = ""
+            return
         }
+        setStoredRecord("\(hubScope(of: hubURL) ?? "") \(offer.fingerprint)", key: Self.trustedHubCARecord)
+        if !tlsCAFile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { tlsCAFile = "" }
     }
 
     /// Undoes a trust whose own verification then failed.
@@ -74,6 +137,7 @@ extension AgentSettings {
             discardPendingHubCA()
         } else {
             _ = try? removeChildFile(Self.managedHubCAName)
+            setStoredRecord("", key: Self.trustedHubCARecord)
         }
     }
 
@@ -89,6 +153,9 @@ extension AgentSettings {
               let data = FileManager.default.contents(atPath: pendingHubCAPath) else { return }
         try writeChildFile(data, name: Self.managedHubCAName)
         discardPendingHubCA()
+        if let trusted = Self.firstFingerprint(inPEMFile: managedHubCAPath) {
+            setStoredRecord("\(scope) \(trusted)", key: Self.trustedHubCARecord)
+        }
         // A CA file typed in Settings belonged to the Hub that was left.
         if !tlsCAFile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { tlsCAFile = "" }
     }
@@ -109,7 +176,7 @@ extension AgentSettings {
 /// setup and by Settings so both ask the same way.
 @MainActor
 final class HubTrustFlow: ObservableObject {
-    typealias QuickTest = (_ hubURL: String, _ skipVerify: Bool, _ caFile: String) async -> ConnectionTestResult
+    typealias QuickTest = (_ hubURL: String, _ skipVerify: Bool, _ caFile: String, _ caOnly: Bool) async -> ConnectionTestResult
     typealias Check = (_ hubURL: String, _ savedCAFile: String) async -> HubCACheck
 
     /// Set while the person decides; nothing is saved or sent meanwhile.
@@ -123,7 +190,9 @@ final class HubTrustFlow: ObservableObject {
     private let check: Check
 
     init(
-        quickTest: @escaping QuickTest = { await ConnectionTester.quickTest(hubURL: $0, tlsSkipVerify: $1, tlsCAFile: $2) },
+        quickTest: @escaping QuickTest = {
+            await ConnectionTester.quickTest(hubURL: $0, tlsSkipVerify: $1, tlsCAFile: $2, tlsCAOnly: $3)
+        },
         check: @escaping Check = { await HubCATrust.check(hubURL: $0, savedCAFile: $1) }
     ) {
         self.quickTest = quickTest
@@ -139,7 +208,7 @@ final class HubTrustFlow: ObservableObject {
         stoppedOnCertificate = false
         self.hubURL = hubURL
         let caFile = settings.effectiveTLSCAFile(forHubURL: hubURL)
-        let result = await quickTest(hubURL, settings.tlsSkipVerify, caFile)
+        let result = await quickTest(hubURL, settings.tlsSkipVerify, caFile, settings.hubCAIsOnlyRoot(forHubURL: hubURL))
         guard case .failure(let message) = result, message == ConnectionTester.certificateFailureMessage else {
             return result
         }
@@ -168,7 +237,10 @@ final class HubTrustFlow: ObservableObject {
         } catch {
             return .failure(error: "The Hub's certificate could not be saved.")
         }
-        let result = await quickTest(hubURL, settings.tlsSkipVerify, settings.effectiveTLSCAFile(forHubURL: hubURL))
+        let result = await quickTest(
+            hubURL, settings.tlsSkipVerify, settings.effectiveTLSCAFile(forHubURL: hubURL),
+            settings.hubCAIsOnlyRoot(forHubURL: hubURL)
+        )
         if case .failure(let message) = result, message == ConnectionTester.certificateFailureMessage {
             settings.removeTrustedHubCA(forHubURL: hubURL)
         } else {

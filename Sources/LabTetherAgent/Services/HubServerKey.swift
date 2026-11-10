@@ -21,10 +21,10 @@ enum HubServerKey {
 
     /// For the record made when the token has just been accepted: the key of
     /// the server that passes this Mac's normal verification for the address
-    /// (the system's roots, plus `anchors` for a Hub with its own CA) and
-    /// finishes the handshake.
-    static func verifiedFingerprint(hubURL: String, anchors: [SecCertificate]) async -> String? {
-        let gate = KeyGate(.verified(anchors: anchors))
+    /// (the system's roots plus `anchors`, or `anchors` alone when the Hub's CA
+    /// is the only root) and finishes the handshake.
+    static func verifiedFingerprint(hubURL: String, anchors: [SecCertificate], anchorsOnly: Bool = false) async -> String? {
+        let gate = KeyGate(.verified(anchors: anchors, anchorsOnly: anchorsOnly))
         guard await completes(hubURL: hubURL, gate: gate) else { return nil }
         return gate.acceptedKey
     }
@@ -68,7 +68,7 @@ enum HubServerKey {
     private final class KeyGate: NSObject, URLSessionTaskDelegate {
         enum Rule {
             case expect(key: String)
-            case verified(anchors: [SecCertificate])
+            case verified(anchors: [SecCertificate], anchorsOnly: Bool)
         }
 
         private let rule: Rule
@@ -117,11 +117,12 @@ enum HubServerKey {
         switch rule {
         case .expect(let key):
             return presentedKey == key
-        case .verified(let anchors):
+        case .verified(let anchors, let anchorsOnly):
             if !anchors.isEmpty {
-                // The agent trusts the system's roots plus the Hub's own CA.
+                // As the agent does: the Hub's CA with the system's roots, or
+                // the Hub's CA alone when the person chose or trusted it.
                 SecTrustSetAnchorCertificates(trust, anchors as CFArray)
-                SecTrustSetAnchorCertificatesOnly(trust, false)
+                SecTrustSetAnchorCertificatesOnly(trust, anchorsOnly)
             }
             return SecTrustEvaluateWithError(trust, nil)
         }

@@ -107,7 +107,7 @@ final class HubCATrustTests: XCTestCase {
         let offer = HubCAOffer(pem: Self.caPEM + "\n", fingerprint: Self.caFingerprint)
         var testedWith: [String] = []
         let trust = HubTrustFlow(
-            quickTest: { _, _, caFile in
+            quickTest: { _, _, caFile, _ in
                 testedWith.append(caFile)
                 return caFile.isEmpty ? .failure(error: ConnectionTester.certificateFailureMessage) : .success(responseTimeMs: 3)
             },
@@ -185,7 +185,7 @@ final class HubCATrustTests: XCTestCase {
         settings.hubURL = hubB
         var checkedAgainst: [String] = []
         let trust = HubTrustFlow(
-            quickTest: { _, _, caFile in
+            quickTest: { _, _, caFile, _ in
                 caFile == settings.pendingHubCAPath ? .success(responseTimeMs: 2)
                     : .failure(error: ConnectionTester.certificateFailureMessage)
             },
@@ -237,7 +237,7 @@ final class HubCATrustTests: XCTestCase {
         let hubB = "wss://nas02.example.com:8443/ws/agent"
         settings.hubURL = hubB
         let trust = HubTrustFlow(
-            quickTest: { _, _, caFile in
+            quickTest: { _, _, caFile, _ in
                 caFile == settings.pendingHubCAPath ? .success(responseTimeMs: 2)
                     : .failure(error: ConnectionTester.certificateFailureMessage)
             },
@@ -255,6 +255,52 @@ final class HubCATrustTests: XCTestCase {
         XCTAssertTrue(try settings.dropCredentialsFromOtherHub())
         XCTAssertEqual(settings.tlsCAFile, "", "the typed file belonged to the Hub that was left")
         XCTAssertEqual(settings.effectiveTLSCAFile, settings.managedHubCAPath)
+    }
+
+    /// The agent trusts the system's roots as well as the Hub's CA unless it
+    /// is told otherwise, so a publicly trusted certificate on the Hub's name
+    /// would be accepted. A CA the person chose or trusted is therefore handed
+    /// over as the only root; a `ca.crt` the agent kept by itself is not, and
+    /// a trusted CA whose file is gone stops the start instead of weakening it.
+    @MainActor
+    func testACATheTrustedHubIsTheAgentsOnlyRoot() async throws {
+        let suite = "LabTetherAgentTests.\(UUID().uuidString)"
+        let store = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("lt-trust-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer {
+            store.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: folder)
+        }
+        let settings = try enrolledSettings(store, folder)
+        XCTAssertEqual(settings.hubCAPin, .none, "a CA nobody chose stays one root among the system's")
+        XCTAssertNil(try settings.buildEnvironment()["LABTETHER_TLS_CA_ONLY"])
+        XCTAssertFalse(settings.hubCAIsOnlyRoot(forHubURL: settings.hubURL))
+
+        // The person trusts this Hub's certificate.
+        let hub = settings.hubURL
+        let trust = HubTrustFlow(
+            quickTest: { _, _, caFile, caOnly in
+                caFile == settings.managedHubCAPath && caOnly ? .success(responseTimeMs: 2)
+                    : .failure(error: ConnectionTester.certificateFailureMessage)
+            },
+            check: { _, _ in .offer(HubCAOffer(pem: Self.caPEM, fingerprint: Self.caFingerprint)) }
+        )
+        let first = await trust.test(hubURL: hub, settings: settings)
+        XCTAssertNil(first)
+        let trusted = await trust.trust(settings: settings)
+        XCTAssertEqual(trusted, .success(responseTimeMs: 2), "the app checks the Hub the way the agent will")
+        XCTAssertEqual(settings.hubCAPin, .file(settings.managedHubCAPath))
+        let environment = try settings.buildEnvironment()
+        XCTAssertEqual(environment["LABTETHER_TLS_CA_FILE"], settings.managedHubCAPath)
+        XCTAssertEqual(environment["LABTETHER_TLS_CA_ONLY"], "true")
+
+        // The trusted file goes missing: no start on weaker terms.
+        try FileManager.default.removeItem(atPath: settings.managedHubCAPath)
+        XCTAssertEqual(settings.hubCAPin, .unusable(AgentSettings.trustedCAUnusableMessage))
+        XCTAssertThrowsError(try settings.buildEnvironment()) { error in
+            XCTAssertEqual(error.localizedDescription, AgentSettings.trustedCAUnusableMessage)
+        }
     }
 
     /// Showing the Hub's certificate is not proof of being the Hub: a

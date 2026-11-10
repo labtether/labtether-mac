@@ -56,12 +56,20 @@ enum AgentEnvironmentBuilder {
             )
         }
         if !settings.assetID.isEmpty { env["AGENT_ASSET_ID"] = settings.assetID }
+        // A CA the person chose or trusted is the agent's only root for the
+        // Hub. Without a usable file the agent is not started on weaker terms.
+        var pinnedCAFile = ""
+        switch settings.hubCAPin {
+        case .none: break
+        case .file(let path): pinnedCAFile = path
+        case .unusable(let words): throw AgentSettingsSecretError(message: words)
+        }
         env.merge(connectionIntentEnvironment(
             groupID: settings.groupID,
             enrollmentToken: trimmedEnrollmentToken,
             hasPersistedEnrollmentToken: settings.hasPersistedEnrollmentToken,
             tlsSkipVerify: settings.tlsSkipVerify,
-            tlsCAFile: settings.tlsCAFile
+            tlsCAFile: pinnedCAFile
         )) { _, new in new }
         env["AGENT_PORT"] = settings.normalizedAgentPort()
         env["LABTETHER_DOCKER_ENABLED"] = settings.normalizedDockerMode()
@@ -178,7 +186,9 @@ enum AgentEnvironmentBuilder {
     }
 
     /// These entries are merged into the Go child's launch environment.
-    /// Group selection is one-use; a custom CA always keeps verification on.
+    /// Group selection is one-use; a custom CA always keeps verification on,
+    /// and is the only root for the Hub (`tlsCAFile` is a CA the person chose
+    /// or trusted; the variable is never set without it).
     static func connectionIntentEnvironment(
         groupID: String,
         enrollmentToken: String,
@@ -197,7 +207,10 @@ enum AgentEnvironmentBuilder {
         if effectiveTLSSkipVerify(tlsSkipVerify, caFile: caFile) {
             env["LABTETHER_TLS_SKIP_VERIFY"] = "true"
         }
-        if !caFile.isEmpty { env["LABTETHER_TLS_CA_FILE"] = caFile }
+        if !caFile.isEmpty {
+            env["LABTETHER_TLS_CA_FILE"] = caFile
+            env["LABTETHER_TLS_CA_ONLY"] = "true"
+        }
         return env
     }
 

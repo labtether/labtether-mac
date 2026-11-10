@@ -122,9 +122,10 @@ extension AgentSettings {
         guard let url = normalizedHubWebSocketURL(), url.hasPrefix("wss://"),
               let scope = pendingHubScope, scope == savedTokenScope else { return }
         let trusted = (try? ConnectionTester.trustedCertificates(for: effectiveTLSCAFile)) ?? []
+        let onlyRoot = hubCAIsOnlyRoot(forHubURL: url)
         Task { @MainActor [weak self] in
             // Only from a connection this Mac verifies, as the agent does.
-            let key = await HubServerKey.verifiedFingerprint(hubURL: url, anchors: trusted)
+            let key = await HubServerKey.verifiedFingerprint(hubURL: url, anchors: trusted, anchorsOnly: onlyRoot)
             // Only a CA this Mac already trusts for the Hub, proven by a full handshake.
             let ca = await HubCATrust.provenOwnCA(hubURL: url, among: trusted)
             guard let self, self.savedTokenScope == scope, self.pendingHubScope == scope else { return }
@@ -144,6 +145,7 @@ extension AgentSettings {
         setStoredRecord("", key: Self.sameHubScopesRecord)
         setStoredRecord("", key: Self.hubServerKeyRecord)
         setStoredRecord("", key: Self.hubCARecord)
+        setStoredRecord("", key: Self.trustedHubCARecord)
         confirmedHubChangeScope = nil
     }
 
