@@ -120,7 +120,7 @@ struct SettingsConnectionTab: View {
     private static let trustPanelID = "hub-trust-panel"
 
     private var testRow: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: LT.space8) {
             Button {
                 Task {
                     isTestingConnection = true
@@ -144,7 +144,7 @@ struct SettingsConnectionTab: View {
 
             ConnectionTestResultText(result: connectionTestResult)
 
-            Spacer(minLength: LT.space8)
+            Spacer(minLength: LT.space4)
 
             if connectionTestResult != nil {
                 Button(L10n.settingsFullDiagnostics) { showDiagnosticsSheet = true }
@@ -175,6 +175,8 @@ struct ConnectionTestResultText: View {
             Text(ConnectionTestText.success(milliseconds))
                 .font(LT.font(12).monospacedDigit())
                 .foregroundStyle(LT.text2)
+                .lineLimit(1)
+                .fixedSize()   // "Reachable · 12 ms" stays on one line
         case .failure(let message):
             Text(message)
                 .font(LT.font(12))
