@@ -31,6 +31,8 @@ final class AgentProcess: ObservableObject {
     @Published var needsRestart: Bool = false
 
     private var userInitiatedStop = false
+    /// Words for the line the agent printed when it refused to start, if it did.
+    private var startRefusal: String?
     var checkingHubChange = false
     let crashCoordinator = CrashRestartCoordinator()
 
@@ -153,6 +155,7 @@ final class AgentProcess: ObservableObject {
 
         userInitiatedStop = false
         needsRestart = false
+        startRefusal = nil
         isStarting = true
         status.prepareForLaunch(
             hubURL: settings.normalizedHubWebSocketURL() ?? settings.hubURL
@@ -288,17 +291,20 @@ final class AgentProcess: ObservableObject {
         stderrPipe = nil
         settings.cleanupEphemeralSecrets()
 
+        let refusal = startRefusal
         if wasUserStop || shouldRestart || proc.terminationStatus == 0 {
             status.markStopped()
         } else {
-            status.markError("Exited with code \(proc.terminationStatus)")
+            // The agent's own reason for not starting, in words, when it gave one.
+            status.markError(refusal ?? "Exited with code \(proc.terminationStatus)")
         }
         if previousState == .connected && !wasUserStop && !shouldRestart {
             notifications.notify(.disconnected)
         }
         if shouldRestart {
             start()
-        } else if proc.terminationStatus != 0 && !wasUserStop {
+        } else if proc.terminationStatus != 0 && !wasUserStop && refusal == nil {
+            // A refused start is a setting to fix, not a crash to retry.
             attemptCrashRestart()
         }
     }
@@ -346,6 +352,7 @@ final class AgentProcess: ObservableObject {
         logBuffer.appendBatch(lines.map(\.raw))
 
         for line in lines {
+            if let words = AgentStartRefusal.words(forLogLine: line.raw) { startRefusal = words }
             let previousState = status.state
             status.handleEvent(line.event)
             sessionHistory.handleEvent(line.event, timestamp: Date())

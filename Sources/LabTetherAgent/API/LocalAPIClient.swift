@@ -8,6 +8,8 @@ struct LocalAPIRuntimeSnapshot: Equatable {
     var uptime: String?
     var lastError: String?
     var lastErrorReason: String?
+    /// The Hub's words for a refused enrollment, while not connected.
+    var enrollmentError: String?
 }
 
 @MainActor
@@ -296,7 +298,8 @@ final class LocalAPIClient: ObservableObject {
             assetID: decoded.assetID,
             uptime: decoded.uptime,
             lastError: decoded.lastError,
-            lastErrorReason: decoded.lastErrorReason
+            lastErrorReason: decoded.lastErrorReason,
+            enrollmentError: decoded.enrollmentError
         )
         publishMetricsSnapshot(decoded.metrics, appendHistory: appendHistory)
         alerts.publish(LocalAPIAlertsSnapshot(alerts: decoded.alerts))
@@ -319,7 +322,8 @@ final class LocalAPIClient: ObservableObject {
         assetID: String?,
         uptime: String?,
         lastError: String?,
-        lastErrorReason: String? = nil
+        lastErrorReason: String? = nil,
+        enrollmentError: String? = nil
     ) {
         runtime.publish(
             LocalAPIRuntimeSnapshot(
@@ -328,7 +332,8 @@ final class LocalAPIClient: ObservableObject {
                 assetID: assetID,
                 uptime: uptime,
                 lastError: lastError,
-                lastErrorReason: lastErrorReason
+                lastErrorReason: lastErrorReason,
+                enrollmentError: enrollmentError
             )
         )
     }
@@ -471,7 +476,8 @@ final class LocalAPIClient: ObservableObject {
                 assetID: latest.assetID,
                 uptime: latest.uptime,
                 lastError: latest.lastError,
-                lastErrorReason: latest.lastErrorReason
+                lastErrorReason: latest.lastErrorReason,
+                enrollmentError: latest.enrollmentError
             )
         } else {
             latestHubConnectionState = runtime.snapshot.hubConnectionState

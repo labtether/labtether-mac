@@ -27,7 +27,8 @@ struct AgentHeroPresentation: Equatable {
         isReachable: Bool,
         apiLastErrorReason: String? = nil,
         hubHost: String? = nil,
-        stoppedAt: Date? = nil
+        stoppedAt: Date? = nil,
+        enrollmentError: String? = nil
     ) -> AgentHeroPresentation {
         let statusError = trimmed(statusLastError)
         // "transient" is the agent's retry class, not text for people.
@@ -53,6 +54,11 @@ struct AgentHeroPresentation: Equatable {
 
         if statusState == .enrolling {
             return AgentHeroPresentation(label: "Enrolling", subtitle: host ?? "", tone: .warn)
+        }
+
+        // The Hub said no to the enrollment: its own words say why.
+        if isReachable, hubConnectionState != "connected", let refusal = trimmed(enrollmentError) {
+            return AgentHeroPresentation(label: "Enrollment refused", subtitle: refusal, tone: .bad)
         }
 
         if isReachable {
@@ -143,7 +149,8 @@ struct AgentHeroPresentation: Equatable {
             isReachable: runtime.snapshot.isReachable,
             apiLastErrorReason: runtime.snapshot.lastErrorReason,
             hubHost: includeHost ? hubHost(from: status.hubURL.isEmpty ? (settings?.hubURL ?? "") : status.hubURL) : nil,
-            stoppedAt: status.stoppedAt
+            stoppedAt: status.stoppedAt,
+            enrollmentError: runtime.snapshot.enrollmentError
         )
     }
 

@@ -33,10 +33,10 @@ enum HubConsoleLocator {
     /// Asks the Hub API root for its console with the same TLS trust as the
     /// bundled agent. Nil when the Hub URL is not the API origin, the Hub
     /// cannot be reached, or the answer names no console.
-    static func locate(hubURL: String, tlsSkipVerify: Bool, tlsCAFile: String) async -> URL? {
+    static func locate(hubURL: String, tlsSkipVerify: Bool, tlsCAFile: String, tlsCAOnly: Bool = false) async -> URL? {
         guard let root = ConnectionTester.httpBaseURL(from: hubURL),
               let response = try? await ConnectionTester.probeHub(
-                  url: root, tlsSkipVerify: tlsSkipVerify, tlsCAFile: tlsCAFile),
+                  url: root, tlsSkipVerify: tlsSkipVerify, tlsCAFile: tlsCAFile, tlsCAOnly: tlsCAOnly),
               response.statusCode == 200
         else { return nil }
         return consoleURL(fromHubRoot: response.body)
@@ -61,8 +61,10 @@ extension AgentSettings {
         let caFile = !configuredCA.isEmpty ? configuredCA
             : (FileManager.default.fileExists(atPath: enrolledCA) ? enrolledCA : "")
         let skipVerify = tlsSkipVerify
+        let onlyRoot = hubCAIsOnlyRoot(forHubURL: wsURL)
         Task { @MainActor [weak self] in
-            let url = await HubConsoleLocator.locate(hubURL: wsURL, tlsSkipVerify: skipVerify, tlsCAFile: caFile)
+            let url = await HubConsoleLocator.locate(
+                hubURL: wsURL, tlsSkipVerify: skipVerify, tlsCAFile: caFile, tlsCAOnly: onlyRoot)
             guard let self, let url, self.normalizedHubWebSocketURL() == wsURL else { return }
             self.hubConsoleSource = wsURL
             if self.hubConsoleURL != url { self.hubConsoleURL = url }

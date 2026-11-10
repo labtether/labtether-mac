@@ -25,7 +25,31 @@ struct SettingsSecurityTab: View {
                         .buttonStyle(LTSecondaryButtonStyle())
                 }
             }
+            if let fingerprint = trustedHubFingerprint {
+                LTFormRow(label: "Trusted Hub", alignment: .top) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(fingerprint, id: \.self) { row in
+                            Text(row)
+                                .font(LT.mono(12))
+                                .foregroundStyle(LT.text2)
+                        }
+                    }
+                    .textSelection(.enabled)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Trusted Hub certificate fingerprint")
+                    .accessibilityValue(fingerprint.joined(separator: " "))
+                }
+            }
         }
+    }
+
+    /// The fingerprint of the Hub certificate kept by "Trust this Hub" (or by
+    /// enrollment), shown while no CA file is typed above.
+    private var trustedHubFingerprint: [String]? {
+        guard settings.tlsCAFile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, settings.hasManagedHubCA,
+              let ca = try? ConnectionTester.trustedCertificates(for: settings.managedHubCAPath).first else { return nil }
+        let value = HubCATrust.fingerprint(of: ca)
+        return HubCAOffer(pem: "", fingerprint: value).groupedRows
     }
 
     private func browseCAFile() {

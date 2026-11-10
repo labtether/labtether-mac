@@ -36,6 +36,9 @@ extension AgentSettings {
                     if try removeChildFile(name) { dropped = true }
                 }
                 forgetHubIdentity()
+                // The old Hub's token and CA are gone; a CA the person
+                // trusted for the new Hub may now become the agent's CA.
+                try promotePendingHubCA(for: scope)
             }
         }
         setStoredRecord(scope, key: Self.agentTokenHubKey)

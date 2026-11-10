@@ -2,20 +2,40 @@ import CryptoKit
 import Foundation
 import Security
 
-/// The SHA-256 of the TLS server key a Hub address presents. Two addresses
-/// with the same key are served by the same Hub. The TLS handshake is stopped
-/// after the certificate is read, so nothing (no token) is ever sent.
+/// The TLS server key of a Hub, as proof of which Hub an address is.
+///
+/// A certificate is public: anyone can copy it and present it. Only a server
+/// that finishes the TLS handshake holds the private key. So a key counts
+/// here only when the handshake completes; reading the certificate and
+/// stopping is never proof. The probe asks for the public identity route and
+/// carries no token, cookie or other credential.
 enum HubServerKey {
-    static func fingerprint(hubURL: String) async -> String? {
-        guard let url = ConnectionTester.hubIdentityURL(from: hubURL), url.scheme == "https" else { return nil }
-        let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 8
-        config.timeoutIntervalForResource = 8
-        let capture = KeyCapture()
-        let session = URLSession(configuration: config, delegate: capture, delegateQueue: nil)
-        defer { session.invalidateAndCancel() }
-        _ = try? await session.data(from: url)
-        return capture.fingerprint
+    enum Proof: Equatable {
+        /// The address finished a handshake with the expected key.
+        case proven
+        /// The address answered, but not as the holder of that key.
+        case notProven
+        /// Nothing answered with a certificate.
+        case unreachable
+    }
+
+    /// For the record made when the token has just been accepted: the key of
+    /// the server that passes this Mac's normal verification for the address
+    /// (the system's roots plus `anchors`, or `anchors` alone when the Hub's CA
+    /// is the only root) and finishes the handshake.
+    static func verifiedFingerprint(hubURL: String, anchors: [SecCertificate], anchorsOnly: Bool = false) async -> String? {
+        let gate = KeyGate(.verified(anchors: anchors, anchorsOnly: anchorsOnly))
+        guard await completes(hubURL: hubURL, gate: gate) else { return nil }
+        return gate.acceptedKey
+    }
+
+    /// Whether the server at `hubURL` holds the private key that `expected`
+    /// names. The handshake goes on only for a certificate with that key, and
+    /// it must finish: a copied certificate cannot finish it.
+    static func proves(_ expected: String, hubURL: String) async -> Proof {
+        let gate = KeyGate(.expect(key: expected))
+        if await completes(hubURL: hubURL, gate: gate) { return .proven }
+        return gate.sawCertificate ? .notProven : .unreachable
     }
 
     static func fingerprint(of trust: SecTrust) -> String? {
@@ -25,10 +45,40 @@ enum HubServerKey {
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
-    private final class KeyCapture: NSObject, URLSessionTaskDelegate {
+    /// True when the identity request got an HTTP answer, which needs a
+    /// finished handshake on a connection the gate let through.
+    private static func completes(hubURL: String, gate: KeyGate) async -> Bool {
+        guard let url = ConnectionTester.hubIdentityURL(from: hubURL), url.scheme == "https" else { return false }
+        let config = URLSessionConfiguration.ephemeral
+        config.httpCookieStorage = nil
+        config.httpShouldSetCookies = false
+        config.urlCredentialStorage = nil
+        config.urlCache = nil
+        config.timeoutIntervalForRequest = 8
+        config.timeoutIntervalForResource = 8
+        let session = URLSession(configuration: config, delegate: gate, delegateQueue: nil)
+        defer { session.invalidateAndCancel() }
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 8)
+        request.httpShouldHandleCookies = false
+        guard let (_, response) = try? await session.data(for: request) else { return false }
+        return response is HTTPURLResponse
+    }
+
+    /// Decides, per connection, whether the handshake may go on.
+    private final class KeyGate: NSObject, URLSessionTaskDelegate {
+        enum Rule {
+            case expect(key: String)
+            case verified(anchors: [SecCertificate], anchorsOnly: Bool)
+        }
+
+        private let rule: Rule
         private let lock = NSLock()
-        private var value: String?
-        var fingerprint: String? { lock.lock(); defer { lock.unlock() }; return value }
+        private var seen = false
+        private var accepted: String?
+        var sawCertificate: Bool { lock.lock(); defer { lock.unlock() }; return seen }
+        var acceptedKey: String? { lock.lock(); defer { lock.unlock() }; return accepted }
+
+        init(_ rule: Rule) { self.rule = rule }
 
         func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge,
                         completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
@@ -42,17 +92,39 @@ enum HubServerKey {
 
         private func handle(_ challenge: URLAuthenticationChallenge,
                             _ completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
-            if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
-               let trust = challenge.protectionSpace.serverTrust {
-                let key = HubServerKey.fingerprint(of: trust)
-                lock.lock(); value = key; lock.unlock()
+            guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+                  let trust = challenge.protectionSpace.serverTrust,
+                  let key = HubServerKey.fingerprint(of: trust) else {
+                completionHandler(.cancelAuthenticationChallenge, nil)
+                return
             }
-            completionHandler(.cancelAuthenticationChallenge, nil)
+            lock.lock(); seen = true; lock.unlock()
+            guard HubServerKey.mayContinue(rule, presentedKey: key, trust: trust) else {
+                completionHandler(.cancelAuthenticationChallenge, nil)
+                return
+            }
+            lock.lock(); accepted = key; lock.unlock()
+            completionHandler(.useCredential, URLCredential(trust: trust))
         }
 
         func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
                         newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
             completionHandler(nil)
+        }
+    }
+
+    private static func mayContinue(_ rule: KeyGate.Rule, presentedKey: String, trust: SecTrust) -> Bool {
+        switch rule {
+        case .expect(let key):
+            return presentedKey == key
+        case .verified(let anchors, let anchorsOnly):
+            if !anchors.isEmpty {
+                // As the agent does: the Hub's CA with the system's roots, or
+                // the Hub's CA alone when the person chose or trusted it.
+                SecTrustSetAnchorCertificates(trust, anchors as CFArray)
+                SecTrustSetAnchorCertificatesOnly(trust, anchorsOnly)
+            }
+            return SecTrustEvaluateWithError(trust, nil)
         }
     }
 }

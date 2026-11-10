@@ -23,6 +23,8 @@ struct AgentStatusResponse: Codable, Equatable, Sendable {
     let agentVersion: String?
     let updateAvailable: Bool?
     let latestVersion: String?
+    /// The Hub's own words for a refused enrollment (agent 2.0 and later).
+    var enrollmentError: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case agentName = "agent_name"
@@ -43,6 +45,7 @@ struct AgentStatusResponse: Codable, Equatable, Sendable {
         case agentVersion = "agent_version"
         case updateAvailable = "update_available"
         case latestVersion = "latest_version"
+        case enrollmentError = "enrollment_error"
     }
 }
 

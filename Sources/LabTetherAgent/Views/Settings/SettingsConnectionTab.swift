@@ -6,11 +6,15 @@ struct SettingsConnectionTab: View {
     @ObservedObject var agentProcess: AgentProcess
     @ObservedObject var status: AgentStatus
     @ObservedObject var runtime: LocalAPIRuntimeStore
+    /// Scrolls the view with this id into sight (the trust question must
+    /// never sit below the window's edge with its buttons cut off).
+    var reveal: (String) -> Void = { _ in }
     @State private var connectionTestResult: ConnectionTestResult?
     @State private var isTestingConnection = false
     @State private var showDiagnosticsSheet = false
     @State private var showIdentity = false
     @State private var hubChange: HubChangeVerdict = .unchanged
+    @StateObject private var trust = HubTrustFlow()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -48,6 +52,23 @@ struct SettingsConnectionTab: View {
                 }
 
                 LTFormRow(label: "") { testRow }
+
+                if let offer = trust.offer {
+                    HubTrustPanel(
+                        offer: offer,
+                        isWorking: trust.isWorking,
+                        onTrust: {
+                            Task {
+                                connectionTestResult = await trust.trust(settings: settings)
+                                settings.markChanged()
+                            }
+                        },
+                        onCancel: { trust.cancel() }
+                    )
+                    .padding(.vertical, LT.space6)
+                    .id(Self.trustPanelID)
+                    .onAppear { DispatchQueue.main.async { reveal(Self.trustPanelID) } }
+                }
 
                 SettingsSecretRow(
                     label: L10n.settingsAPIToken,
@@ -91,22 +112,20 @@ struct SettingsConnectionTab: View {
             ConnectionDiagnosticsSheet(
                 hubURL: settings.hubURL,
                 tlsSkipVerify: settings.tlsSkipVerify,
-                tlsCAFile: settings.tlsCAFile
+                tlsCAFile: settings.effectiveTLSCAFile
             )
         }
     }
 
+    private static let trustPanelID = "hub-trust-panel"
+
     private var testRow: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: LT.space8) {
             Button {
                 Task {
                     isTestingConnection = true
                     connectionTestResult = nil
-                    connectionTestResult = await ConnectionTester.quickTest(
-                        hubURL: settings.hubURL,
-                        tlsSkipVerify: settings.tlsSkipVerify,
-                        tlsCAFile: settings.tlsCAFile
-                    )
+                    connectionTestResult = await trust.test(hubURL: settings.hubURL, settings: settings)
                     isTestingConnection = false
                 }
             } label: {
@@ -118,17 +137,19 @@ struct SettingsConnectionTab: View {
                 }
             }
             .buttonStyle(LTSecondaryButtonStyle())
-            .disabled(isTestingConnection)
+            .fixedSize()   // the result beside it wraps; the label is never cut ("Test conne…")
+            .disabled(isTestingConnection || trust.offer != nil)
             .accessibilityIdentifier("settings-test-connection")
             .accessibilityHint("Tests the connection to the Hub")
 
             ConnectionTestResultText(result: connectionTestResult)
 
-            Spacer(minLength: LT.space8)
+            Spacer(minLength: LT.space4)
 
             if connectionTestResult != nil {
                 Button(L10n.settingsFullDiagnostics) { showDiagnosticsSheet = true }
                     .buttonStyle(LTTextButtonStyle(fontSize: 12))
+                    .fixedSize()
             }
         }
     }
@@ -154,12 +175,15 @@ struct ConnectionTestResultText: View {
             Text(ConnectionTestText.success(milliseconds))
                 .font(LT.font(12).monospacedDigit())
                 .foregroundStyle(LT.text2)
+                .lineLimit(1)
+                .fixedSize()   // "Reachable · 12 ms" stays on one line
         case .failure(let message):
             Text(message)
                 .font(LT.font(12))
                 .foregroundStyle(LT.badText)
                 .lineLimit(2)
                 .truncationMode(.middle)
+                .fixedSize(horizontal: false, vertical: true)
                 .help(message)
         case nil:
             EmptyView()
