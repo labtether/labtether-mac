@@ -246,7 +246,8 @@ final class AppState: ObservableObject {
             metrics: apiClient.metrics.snapshot.current,
             hasFiringAlerts: !apiClient.alerts.snapshot.firingAlerts.isEmpty,
             hasCriticalAlert: apiClient.alerts.snapshot.hasCriticalFiring,
-            isConfigured: settings.isConfigured
+            isConfigured: settings.isConfigured,
+            enrollmentRefused: !(apiClient.runtime.snapshot.enrollmentError ?? "").isEmpty
         )
     }
 

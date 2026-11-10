@@ -26,7 +26,8 @@ struct MenuBarLabelPresentation: Equatable {
         metrics: MetricsSnapshot?,
         hasFiringAlerts: Bool,
         hasCriticalAlert: Bool = false,
-        isConfigured: Bool = true
+        isConfigured: Bool = true,
+        enrollmentRefused: Bool = false
     ) -> MenuBarLabelPresentation {
         let kind = MenuBarIconResolver.resolve(
             statusState: statusState,
@@ -35,7 +36,8 @@ struct MenuBarLabelPresentation: Equatable {
             metrics: metrics,
             hasFiringAlerts: hasFiringAlerts,
             hasCriticalAlert: hasCriticalAlert,
-            isConfigured: isConfigured
+            isConfigured: isConfigured,
+            enrollmentRefused: enrollmentRefused
         )
 
         guard displayMode != "compact", let metrics, isReachable else {

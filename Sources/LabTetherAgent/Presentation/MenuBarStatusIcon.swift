@@ -63,7 +63,8 @@ enum MenuBarIconResolver {
         metrics: MetricsSnapshot?,
         hasFiringAlerts: Bool,
         hasCriticalAlert: Bool = false,
-        isConfigured: Bool = true
+        isConfigured: Bool = true,
+        enrollmentRefused: Bool = false
     ) -> MenuBarIconKind {
         // Nothing is wrong before setup: a calm, dimmed glyph without a dot.
         if !isConfigured && statusState != .connected {
@@ -73,7 +74,7 @@ enum MenuBarIconResolver {
             return hasCriticalAlert ? .criticalAlert : .alert
         }
 
-        if hubConnectionState == "auth_failed" {
+        if hubConnectionState == "auth_failed" || (enrollmentRefused && hubConnectionState != "connected") {
             return .error
         }
 

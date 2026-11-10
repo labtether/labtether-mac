@@ -27,6 +27,22 @@ final class AgentHeroPresentationTests: XCTestCase {
         XCTAssertEqual(hero.tone, .warn)
     }
 
+    /// A refused enrollment must show the Hub's reason, not "Reconnecting".
+    func testRefusedEnrollmentShowsTheHubsWords() {
+        let hero = AgentHeroPresentation.resolve(
+            processIsRunning: true, processIsStarting: false, statusState: .reconnecting, statusLastError: "",
+            statusUptime: nil, apiUptime: nil, apiLastError: nil, hubConnectionState: "connecting", isReachable: true,
+            enrollmentError: "invalid or expired enrollment token"
+        )
+        XCTAssertEqual(hero.label, "Enrollment refused")
+        XCTAssertEqual(hero.subtitle, "invalid or expired enrollment token")
+        XCTAssertEqual(hero.tone, .bad)
+        XCTAssertEqual(MenuBarIconResolver.resolve(
+            statusState: .reconnecting, hubConnectionState: "connecting", isReachable: true, metrics: nil,
+            hasFiringAlerts: false, enrollmentRefused: true
+        ), .error)
+    }
+
     func testResolvePrefersAuthFailureOverWrapperConnectedState() {
         let presentation = AgentHeroPresentation.resolve(
             processIsRunning: true,
