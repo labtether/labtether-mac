@@ -34,6 +34,8 @@ enum HubConnectReason: String, Equatable {
         switch self {
         case .hostUnreachable:
             return "Check System Settings > Privacy & Security > Local Network and turn on LabTether Agent."
+        case .certificateUntrusted:
+            return "Review it with Test connection in Settings › Connection."
         default:
             return nil
         }

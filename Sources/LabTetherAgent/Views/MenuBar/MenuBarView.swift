@@ -99,7 +99,7 @@ struct MenuBarView: View {
             let result = await ConnectionTester.quickTest(
                 hubURL: settings.hubURL,
                 tlsSkipVerify: settings.tlsSkipVerify,
-                tlsCAFile: settings.tlsCAFile
+                tlsCAFile: settings.effectiveTLSCAFile
             )
             switch result {
             case .success(responseTimeMs: let ms):

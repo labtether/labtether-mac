@@ -384,6 +384,9 @@ enum ConnectionTester {
         )
     }
 
+    /// What every TLS trust failure reads as; setup then looks at the certificate.
+    static let certificateFailureMessage = "TLS certificate verification failed."
+
     private static func probeFailureMessage(_ error: Error) -> String {
         if let probeError = error as? HubProbeError {
             switch probeError {
@@ -407,7 +410,7 @@ enum ConnectionTester {
                  .secureConnectionFailed,
                  .clientCertificateRejected,
                  .clientCertificateRequired:
-                return "TLS certificate verification failed."
+                return certificateFailureMessage
             default:
                 return "Connection failed."
             }

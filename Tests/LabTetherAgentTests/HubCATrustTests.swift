@@ -1,0 +1,149 @@
+import XCTest
+@testable import LabTetherAgent
+
+/// Risks: setup offers trust for a certificate that has another fault, shows
+/// a fingerprint that is not the one the Hub console shows, or lets the
+/// enrollment token leave before the person has trusted the Hub.
+final class HubCATrustTests: XCTestCase {
+    // Throwaway certificates made for this test (their keys were not kept):
+    // a CA, a server certificate for hub.example.com signed by it (valid
+    // 2026-11-10 to 2029-01-18), and an unrelated CA.
+    private static let caPEM = """
+        -----BEGIN CERTIFICATE-----
+        MIIBmDCCAT2gAwIBAgIUAzd+au5P9Ja6eStEdHzUB3SBQpcwCgYIKoZIzj0EAwIw
+        GTEXMBUGA1UEAwwORXhhbXBsZSBIdWIgQ0EwHhcNMjYxMTEwMDYwNzQzWhcNNDYx
+        MTA1MDYwNzQzWjAZMRcwFQYDVQQDDA5FeGFtcGxlIEh1YiBDQTBZMBMGByqGSM49
+        AgEGCCqGSM49AwEHA0IABEEsI2Q9hda49M6kqcsrL4fUT5CLFj+LzjN2FT9/u/Ss
+        28OaHhNqcLXm8hSZjCz6Nh9HG4JbabC7MEp2opnU4j+jYzBhMB0GA1UdDgQWBBSV
+        u5AByx+enKBzkrJFtRUp6BcfSzAfBgNVHSMEGDAWgBSVu5AByx+enKBzkrJFtRUp
+        6BcfSzAPBgNVHRMBAf8EBTADAQH/MA4GA1UdDwEB/wQEAwIBBjAKBggqhkjOPQQD
+        AgNJADBGAiEAuVjB+SbUDgSaQAFc0JUxVcBqELa0Ax7OXpe6oRWq1ikCIQDn/imR
+        /x5LkmhYoHNdqT1zM5HI3yxMHe67E6+9YoWDQQ==
+        -----END CERTIFICATE-----
+        """
+    private static let leafPEM = """
+        -----BEGIN CERTIFICATE-----
+        MIIBxTCCAWugAwIBAgIUfITXgDgvY1fMQ6BpbZcWs89dEMkwCgYIKoZIzj0EAwIw
+        GTEXMBUGA1UEAwwORXhhbXBsZSBIdWIgQ0EwHhcNMjYxMTEwMDYwNzQzWhcNMjkw
+        MTE4MDYwNzQzWjAaMRgwFgYDVQQDDA9odWIuZXhhbXBsZS5jb20wWTATBgcqhkjO
+        PQIBBggqhkjOPQMBBwNCAASfJRXTBtrNMvamisH6ET2htoXnHv4XuzgVHjv1hlw7
+        E+F9WhdeSL8zw0MtzkHIXcraoiPXhHVkjCFkAsdFxvC6o4GPMIGMMBoGA1UdEQQT
+        MBGCD2h1Yi5leGFtcGxlLmNvbTATBgNVHSUEDDAKBggrBgEFBQcDATAOBgNVHQ8B
+        Af8EBAMCB4AwCQYDVR0TBAIwADAdBgNVHQ4EFgQUp7vtV0qIFZyTlkML0JFabD1V
+        uZswHwYDVR0jBBgwFoAUlbuQAcsfnpygc5KyRbUVKegXH0swCgYIKoZIzj0EAwID
+        SAAwRQIgExZxLR9rb2NVApA3RTaDDVzlTe1lmImuBczV3HnVhW4CIQDqAlJWtoIf
+        RGdOHkGeUodfrY96EZHHNFXtJJQsDw2rpQ==
+        -----END CERTIFICATE-----
+        """
+    private static let otherCAPEM = """
+        -----BEGIN CERTIFICATE-----
+        MIIBlzCCAT2gAwIBAgIUZxwsMuFqw1aFEeSZQOcBRglydngwCgYIKoZIzj0EAwIw
+        GTEXMBUGA1UEAwwOQW5vdGhlciBIdWIgQ0EwHhcNMjYxMTEwMDYwNzQzWhcNNDYx
+        MTA1MDYwNzQzWjAZMRcwFQYDVQQDDA5Bbm90aGVyIEh1YiBDQTBZMBMGByqGSM49
+        AgEGCCqGSM49AwEHA0IABM5gXeY1NH5/4gSh5kA8r2GP1QQrxGR+JeduRloN+tqE
+        0AE1Id1tBPOR1SKoaYCYXnrM1BI1WUWBU8MB50KKhc2jYzBhMB0GA1UdDgQWBBSa
+        QwePlj1441oN1sMgA27uEW1gfjAfBgNVHSMEGDAWgBSaQwePlj1441oN1sMgA27u
+        EW1gfjAPBgNVHRMBAf8EBTADAQH/MA4GA1UdDwEB/wQEAwIBBjAKBggqhkjOPQQD
+        AgNIADBFAiAw6c+JwBCAoLQcuw60cnxdzOOIDy4khI9FEizvg5O/aAIhAPBhqtiP
+        /1zBjF/BgzdM2tuiVqik61xKvqmbs3MMAZn9
+        -----END CERTIFICATE-----
+        """
+    private static let caFingerprint = "2d7e54ca6aa0d37f9256473f4dd8a70f64497e02220cb27bcb31ac9008df1a91"
+    private let host = "hub.example.com"
+    /// Inside the server certificate's validity, so the test does not age.
+    private let day = Date(timeIntervalSince1970: 1_812_000_000) // 2027-06-03
+
+    private func certificate(_ pem: String) throws -> SecCertificate {
+        try XCTUnwrap(HubCATrust.certificates(fromPEM: pem).first)
+    }
+
+    func testFingerprintIsTheSHA256OfTheCertificateInGroupsOfFour() throws {
+        let ca = try certificate(Self.caPEM)
+        XCTAssertEqual(HubCATrust.fingerprint(of: ca), Self.caFingerprint)
+        let offer = HubCAOffer(pem: HubCATrust.pem(of: ca), fingerprint: Self.caFingerprint)
+        XCTAssertEqual(offer.groupedRows, [
+            "2d7e 54ca 6aa0 d37f 9256 473f 4dd8 a70f",
+            "6449 7e02 220c b27b cb31 ac90 08df 1a91",
+        ])
+        // What is saved is the same certificate.
+        XCTAssertEqual(HubCATrust.fingerprint(of: try certificate(offer.pem)), Self.caFingerprint)
+    }
+
+    func testOnlyAnUnknownIssuerIsOfferedForTrust() throws {
+        let ca = try certificate(Self.caPEM), leaf = try certificate(Self.leafPEM), other = try certificate(Self.otherCAPEM)
+        func check(_ chain: [SecCertificate], host: String = "hub.example.com", saved: [SecCertificate] = [],
+                   fetched: SecCertificate? = nil, at date: Date? = nil) -> HubCACheck {
+            HubCATrust.evaluate(chain: chain, host: host, savedAnchors: saved, fetchedCA: fetched, at: date ?? day)
+        }
+        let offered = HubCAOffer(pem: HubCATrust.pem(of: ca), fingerprint: Self.caFingerprint)
+        XCTAssertEqual(check([leaf, ca]), .offer(offered), "CA sent in the chain")
+        XCTAssertEqual(check([leaf], fetched: ca), .offer(offered), "CA from /api/v1/ca.crt")
+        // The Hub's certificate does not chain to the CA it offers: no trust.
+        XCTAssertEqual(check([leaf], fetched: other), .refused(HubCATrust.mismatchMessage))
+        XCTAssertEqual(check([leaf]), .refused(HubCATrust.noOwnCAMessage))
+        // Other faults stay errors in plain words.
+        XCTAssertEqual(check([leaf, ca], host: "nas01.example.com"), .refused(HubCATrust.wrongHostMessage))
+        XCTAssertEqual(check([leaf, ca], at: Date(timeIntervalSince1970: 1_900_000_000)), .refused(HubCATrust.expiredMessage))
+        // Once trusted there is no question; another CA later is a change.
+        XCTAssertEqual(check([leaf], saved: [ca]), .trusted)
+        var changed = offered
+        changed.replacesSavedCA = true
+        XCTAssertEqual(check([leaf, ca], saved: [other]), .offer(changed))
+        XCTAssertTrue(HubCATrust.chainsOnly(to: [ca], chain: [leaf], host: host, at: day))
+        XCTAssertFalse(HubCATrust.chainsOnly(to: [other], chain: [leaf], host: host, at: day))
+    }
+
+    @MainActor
+    func testTokenStaysInSetupUntilTheHubIsTrustedAndVerified() async throws {
+        let suite = "LabTetherAgentTests.\(UUID().uuidString)"
+        let store = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("lt-trust-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer {
+            store.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: folder)
+        }
+        let settings = AgentSettings(testSettingsStore: store, appSupportDirectory: folder)
+        let offer = HubCAOffer(pem: Self.caPEM + "\n", fingerprint: Self.caFingerprint)
+        var testedWith: [String] = []
+        let trust = HubTrustFlow(
+            quickTest: { _, _, caFile in
+                testedWith.append(caFile)
+                return caFile.isEmpty ? .failure(error: ConnectionTester.certificateFailureMessage) : .success(responseTimeMs: 3)
+            },
+            check: { _, _ in .offer(offer) }
+        )
+        let setup = OnboardingState()
+        setup.hubURL = "hub.example.com:8443"
+        setup.tokenValue = "one-use-token"
+
+        var step = await setup.connect(settings: settings, trust: trust)
+        XCTAssertEqual(step, .waitingForTrust)
+        XCTAssertEqual(trust.offer, offer)
+        XCTAssertEqual(settings.enrollmentToken, "", "the token has not left the setup window")
+        XCTAssertFalse(settings.hasCompletedOnboarding)
+        XCTAssertFalse(settings.hasManagedHubCA)
+
+        // Cancel saves nothing.
+        setup.cancelTrust(trust)
+        XCTAssertNil(trust.offer)
+        XCTAssertFalse(settings.hasManagedHubCA)
+        XCTAssertEqual(settings.enrollmentToken, "")
+
+        // Trust: the CA is kept, the Hub verifies against it, then setup goes on.
+        step = await setup.connect(settings: settings, trust: trust)
+        XCTAssertEqual(step, .waitingForTrust)
+        step = await setup.trustHub(settings: settings, trust: trust)
+        XCTAssertEqual(step, .go)
+        XCTAssertEqual(settings.effectiveTLSCAFile, settings.managedHubCAPath)
+        XCTAssertEqual(testedWith.last, settings.managedHubCAPath, "verified with the kept CA before going on")
+        XCTAssertEqual(settings.enrollmentToken, "one-use-token")
+        XCTAssertTrue(settings.hasCompletedOnboarding)
+
+        // The CA download asks for the public file and carries nothing.
+        let request = try XCTUnwrap(HubCATrust.caRequest(for: XCTUnwrap(URL(string: "https://hub.example.com:8443/api/v1/discover"))))
+        XCTAssertEqual(request.url?.absoluteString, "https://hub.example.com:8443/api/v1/ca.crt")
+        XCTAssertFalse(request.httpShouldHandleCookies)
+        XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+    }
+}

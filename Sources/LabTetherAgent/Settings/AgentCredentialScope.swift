@@ -32,7 +32,9 @@ extension AgentSettings {
                 // Another address of the same Hub keeps the token.
                 try allowSavedToken(forScope: scope)
             } else {
-                for name in Self.hubBoundFileNames {
+                // A CA just trusted in setup for the new Hub stays.
+                let keepCA = storedRecord(Self.trustedHubCAScopeRecord) == scope
+                for name in Self.hubBoundFileNames where !(keepCA && name == Self.managedHubCAName) {
                     if try removeChildFile(name) { dropped = true }
                 }
                 forgetHubIdentity()

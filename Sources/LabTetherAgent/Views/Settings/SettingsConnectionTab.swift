@@ -11,6 +11,7 @@ struct SettingsConnectionTab: View {
     @State private var showDiagnosticsSheet = false
     @State private var showIdentity = false
     @State private var hubChange: HubChangeVerdict = .unchanged
+    @StateObject private var trust = HubTrustFlow()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -48,6 +49,21 @@ struct SettingsConnectionTab: View {
                 }
 
                 LTFormRow(label: "") { testRow }
+
+                if let offer = trust.offer {
+                    HubTrustPanel(
+                        offer: offer,
+                        isWorking: trust.isWorking,
+                        onTrust: {
+                            Task {
+                                connectionTestResult = await trust.trust(settings: settings)
+                                settings.markChanged()
+                            }
+                        },
+                        onCancel: { trust.cancel() }
+                    )
+                    .padding(.vertical, LT.space6)
+                }
 
                 SettingsSecretRow(
                     label: L10n.settingsAPIToken,
@@ -91,7 +107,7 @@ struct SettingsConnectionTab: View {
             ConnectionDiagnosticsSheet(
                 hubURL: settings.hubURL,
                 tlsSkipVerify: settings.tlsSkipVerify,
-                tlsCAFile: settings.tlsCAFile
+                tlsCAFile: settings.effectiveTLSCAFile
             )
         }
     }
@@ -102,11 +118,7 @@ struct SettingsConnectionTab: View {
                 Task {
                     isTestingConnection = true
                     connectionTestResult = nil
-                    connectionTestResult = await ConnectionTester.quickTest(
-                        hubURL: settings.hubURL,
-                        tlsSkipVerify: settings.tlsSkipVerify,
-                        tlsCAFile: settings.tlsCAFile
-                    )
+                    connectionTestResult = await trust.test(hubURL: settings.hubURL, settings: settings)
                     isTestingConnection = false
                 }
             } label: {
@@ -118,7 +130,7 @@ struct SettingsConnectionTab: View {
                 }
             }
             .buttonStyle(LTSecondaryButtonStyle())
-            .disabled(isTestingConnection)
+            .disabled(isTestingConnection || trust.offer != nil)
             .accessibilityIdentifier("settings-test-connection")
             .accessibilityHint("Tests the connection to the Hub")
 

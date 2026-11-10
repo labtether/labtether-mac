@@ -46,14 +46,71 @@ final class OnboardingState: ObservableObject {
             && !tokenValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    /// Fires a quick probe against `hubURL` and stores the result.
-    func testConnection(tlsSkipVerify: Bool, tlsCAFile: String = "") async {
+    /// What Connect should do after the certificate has been looked at.
+    enum ConnectStep: Equatable {
+        /// Settings are saved and the agent may start: the token can be sent.
+        case go
+        /// The trust question is on screen; nothing is saved or sent.
+        case waitingForTrust
+        /// The Hub's certificate is not acceptable; the words are shown.
+        case stopped
+    }
+
+    /// Connect was pressed and waits for the trust answer.
+    private var connectAfterTrust = false
+
+    /// Test connection: the result, or the trust question when the Hub uses
+    /// its own certificate.
+    func testConnection(settings: AgentSettings, trust: HubTrustFlow) async {
         guard !isTesting else { return }
         isTesting = true
         connectionTestResult = nil
-        let result = await ConnectionTester.quickTest(hubURL: hubURL, tlsSkipVerify: tlsSkipVerify, tlsCAFile: tlsCAFile)
+        connectAfterTrust = false
+        connectionTestResult = await trust.test(hubURL: hubURL, settings: settings)
         isTesting = false
-        connectionTestResult = result
+    }
+
+    /// Connect: looks at the Hub's certificate first. The token is written to
+    /// the settings (and so sent by the agent) only on `.go`.
+    func connect(settings: AgentSettings, trust: HubTrustFlow) async -> ConnectStep {
+        guard canConnect, !isTesting else { return .stopped }
+        isTesting = true
+        defer { isTesting = false }
+        connectionTestResult = nil
+        let result = await trust.test(hubURL: hubURL, settings: settings)
+        if trust.offer != nil {
+            connectAfterTrust = true
+            return .waitingForTrust
+        }
+        if trust.stoppedOnCertificate {
+            connectionTestResult = result
+            return .stopped
+        }
+        // Unreachable or slow Hubs are the agent's to retry, as before.
+        applyToSettings(settings)
+        return .go
+    }
+
+    /// "Trust this Hub" was pressed.
+    func trustHub(settings: AgentSettings, trust: HubTrustFlow) async -> ConnectStep {
+        let result = await trust.trust(settings: settings)
+        let wasConnecting = connectAfterTrust
+        connectAfterTrust = false
+        guard case .success = result else {
+            connectionTestResult = result
+            return .stopped
+        }
+        guard wasConnecting, canConnect else {
+            connectionTestResult = result
+            return .stopped
+        }
+        applyToSettings(settings)
+        return .go
+    }
+
+    func cancelTrust(_ trust: HubTrustFlow) {
+        connectAfterTrust = false
+        trust.cancel()
     }
 
     /// Writes the draft into `settings`, marks setup complete and turns on
@@ -87,6 +144,7 @@ struct OnboardingView: View {
     @ObservedObject var agentProcess: AgentProcess
 
     @StateObject private var state = OnboardingState()
+    @StateObject private var trust = HubTrustFlow()
     @State private var showAdvanced = false
     @Environment(\.dismiss) private var dismiss
 
@@ -111,6 +169,15 @@ struct OnboardingView: View {
 
             VStack(alignment: .leading, spacing: 0) {
                 form
+                if let offer = trust.offer {
+                    HubTrustPanel(
+                        offer: offer,
+                        isWorking: trust.isWorking,
+                        onTrust: { Task { if await state.trustHub(settings: settings, trust: trust) == .go { startAndClose() } } },
+                        onCancel: { state.cancelTrust(trust) }
+                    )
+                    .padding(.top, LT.space12)
+                }
                 // Not animated: the window follows its content only for plain
                 // changes, and an animated one left Connect below the bottom edge.
                 LTDisclosureRow(title: L10n.onboardingAdvanced, detail: "Asset ID, group ID",
@@ -128,7 +195,7 @@ struct OnboardingView: View {
                 Spacer()
                 Button(L10n.onboardingFinish, action: finish)
                     .buttonStyle(LTPrimaryButtonStyle(height: 32, radius: LT.radiusControl))
-                    .disabled(!state.canConnect)
+                    .disabled(!state.canConnect || state.isTesting || trust.offer != nil)
                     .keyboardShortcut(.defaultAction)
                     .accessibilityIdentifier("onboarding-finish")
             }
@@ -174,7 +241,7 @@ struct OnboardingView: View {
                 LTFormRow(label: "") {
                     HStack(spacing: 10) {
                         Button {
-                            Task { await state.testConnection(tlsSkipVerify: settings.tlsSkipVerify, tlsCAFile: settings.tlsCAFile) }
+                            Task { await state.testConnection(settings: settings, trust: trust) }
                         } label: {
                             HStack(spacing: LT.space6) {
                                 if state.isTesting { LTSpinnerArc(color: LT.text3, size: 11) }
@@ -182,7 +249,8 @@ struct OnboardingView: View {
                             }
                         }
                         .buttonStyle(LTSecondaryButtonStyle())
-                        .disabled(state.isTesting || AgentSettingsNormalization.canonicalHubWebSocketURL(from: state.hubURL) == nil)
+                        .disabled(state.isTesting || trust.offer != nil
+                                  || AgentSettingsNormalization.canonicalHubWebSocketURL(from: state.hubURL) == nil)
                         ConnectionTestResultText(result: state.connectionTestResult)
                     }
                 }
@@ -209,9 +277,15 @@ struct OnboardingView: View {
         if !trimmed.isEmpty { state.hubURL = trimmed }
     }
 
+    /// Connect: the certificate is looked at first; the agent (and with it
+    /// the token) starts only once the Hub verifies.
     private func finish() {
-        guard state.canConnect else { return }
-        state.applyToSettings(settings)
+        Task {
+            if await state.connect(settings: settings, trust: trust) == .go { startAndClose() }
+        }
+    }
+
+    private func startAndClose() {
         if agentProcess.isRunning {
             agentProcess.restart()
         } else {

@@ -66,6 +66,11 @@ extension AgentSettings {
         guard let tokenScope = savedTokenScope, let scope = pendingHubScope,
               let url = normalizedHubWebSocketURL(), scope != tokenScope else { return .unchanged }
         if isKnownSameHub(scope) { return .sameHub }
+        // Same Hub = same CA: the new address proves the CA kept for this Hub.
+        if hasManagedHubCA, await HubCATrust.isServedBy(savedCAFile: managedHubCAPath, hubURL: url) {
+            rememberSameHub(scope)
+            return .sameHub
+        }
         let record = storedRecord(Self.hubServerKeyRecord).split(separator: " ").map(String.init)
         guard record.count == 2, record[0] == tokenScope else { return .unknown }
         guard let key = await HubServerKey.fingerprint(hubURL: url) else {
