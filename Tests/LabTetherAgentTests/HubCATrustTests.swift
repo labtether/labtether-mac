@@ -35,7 +35,7 @@ final class HubCATrustTests: XCTestCase {
         RGdOHkGeUodfrY96EZHHNFXtJJQsDw2rpQ==
         -----END CERTIFICATE-----
         """
-    private static let otherCAPEM = """
+    static let otherCAPEM = """
         -----BEGIN CERTIFICATE-----
         MIIBlzCCAT2gAwIBAgIUZxwsMuFqw1aFEeSZQOcBRglydngwCgYIKoZIzj0EAwIw
         GTEXMBUGA1UEAwwOQW5vdGhlciBIdWIgQ0EwHhcNMjYxMTEwMDYwNzQzWhcNNDYx

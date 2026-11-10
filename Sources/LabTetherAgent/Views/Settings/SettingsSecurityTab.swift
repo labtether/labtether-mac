@@ -17,7 +17,7 @@ struct SettingsSecurityTab: View {
                 isOn: $settings.tlsSkipVerify,
                 onChange: { settings.markChanged() }
             )
-            LTFormRow(label: "CA certificate", alignment: caError == nil ? .center : .top) {
+            LTFormRow(label: "CA certificate", alignment: caError == nil && settings.chosenCAProblem == nil ? .center : .top) {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: LT.space8) {
                         LTTextField(
@@ -29,7 +29,24 @@ struct SettingsSecurityTab: View {
                         Button("Browse…", action: browseCAFile)
                             .buttonStyle(LTSecondaryButtonStyle())
                     }
-                    if let caError { LTFieldError(text: caError) }
+                    if let caError {
+                        LTFieldError(text: caError)
+                    } else if let problem = settings.chosenCAProblem {
+                        // The saved file is wrong for this Hub: say so, with the way out.
+                        HStack(alignment: .firstTextBaseline, spacing: LT.space8) {
+                            LTFieldError(text: problem.words)
+                            switch problem {
+                            case .doesNotMatch:
+                                Button("Remove") { caDraft = "" }
+                                    .buttonStyle(LTTextButtonStyle(fontSize: 12))
+                                    .accessibilityLabel("Remove CA certificate")
+                            case .changed:
+                                Button("Check again", action: checkSavedCAFileAgain)
+                                    .buttonStyle(LTTextButtonStyle(fontSize: 12))
+                                    .accessibilityLabel("Check CA certificate again")
+                            }
+                        }
+                    }
                 }
             }
             .onAppear { caDraft = settings.tlsCAFile }
@@ -72,6 +89,15 @@ struct SettingsSecurityTab: View {
               let ca = try? ConnectionTester.trustedCertificates(for: settings.managedHubCAPath).first else { return nil }
         let value = HubCATrust.fingerprint(of: ca)
         return HubCAOffer(pem: "", fingerprint: value).groupedRows
+    }
+
+    /// The saved file changed on disk: the same path is checked against the
+    /// Hub again, as if it had just been chosen.
+    private func checkSavedCAFileAgain() {
+        Task { @MainActor in
+            caError = await settings.chooseCAFile(settings.tlsCAFile)
+            if caError == nil { settings.markChanged() }
+        }
     }
 
     private func browseCAFile() {

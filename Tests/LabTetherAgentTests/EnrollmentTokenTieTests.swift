@@ -84,6 +84,29 @@ final class EnrollmentTokenTieTests: XCTestCase {
         XCTAssertEqual(settings.enrollmentTokenFile, .untied, "the trusted CA is not the one the token was made for")
     }
 
+    /// An installer that writes the Hub's CA file and names it in the tie:
+    /// that file is the only root from the first start, and the token is sent.
+    func testATieNamingTheChosenCAFileMakesItTheOnlyRoot() throws {
+        let (settings, folder, cleanup) = try makeSettings()
+        defer { cleanup() }
+        settings.hubURL = hubA
+        let caPath = folder.appendingPathComponent("hub-ca.pem").path
+        try Data(HubCATrustTests.caPEM.utf8).write(to: URL(fileURLWithPath: caPath))
+        settings.tlsCAFile = caPath
+        try installToken(settings, tie: #"{"hub_url":"wss://nas01.example.com:8443","ca_fingerprint_sha256":"\#(HubCATrustTests.caFingerprint)"}"#)
+        XCTAssertEqual(settings.hubCAPin, .file(caPath))
+        XCTAssertEqual(settings.enrollmentTokenFile, .tied)
+        let environment = try settings.buildEnvironment()
+        XCTAssertEqual(environment["LABTETHER_ENROLLMENT_TOKEN_FILE"], settings.enrollmentTokenFilePath)
+        XCTAssertEqual(environment["LABTETHER_TLS_CA_ONLY"], "true")
+
+        // Another CA file in Settings: the token is held back.
+        try Data(HubCATrustTests.otherCAPEM.utf8).write(to: URL(fileURLWithPath: caPath))
+        XCTAssertEqual(settings.hubCAPin, .alongside(caPath))
+        XCTAssertEqual(settings.enrollmentTokenFile, .untied)
+        XCTAssertNil(try settings.buildEnvironment()["LABTETHER_ENROLLMENT_TOKEN_FILE"])
+    }
+
     /// The address is changed before this Mac ever enrolled, and the person
     /// trusts the new Hub's certificate. The next start used to delete that
     /// certificate as "the previous Hub's", so the menu said "not trusted"

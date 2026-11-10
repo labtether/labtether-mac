@@ -54,6 +54,16 @@ extension AgentSettings {
         return .tied
     }
 
+    /// The CA fingerprint the token file's tie names, when that tie is for the Hub at `hubURL`.
+    func enrollmentTokenTieCA(forHubURL hubURL: String) -> String? {
+        guard hasPersistedEnrollmentToken, let tie = enrollmentTokenTie,
+              let wanted = tie.caFingerprint?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), !wanted.isEmpty,
+              let url = AgentSettingsNormalization.canonicalHubWebSocketURL(from: hubURL),
+              let tiedURL = AgentSettingsNormalization.canonicalHubWebSocketURL(from: tie.hubURL),
+              Self.credentialScope(forHubWebSocketURL: tiedURL) == Self.credentialScope(forHubWebSocketURL: url) else { return nil }
+        return wanted
+    }
+
     var enrollmentTokenTie: EnrollmentTokenTie? {
         let data: Data?
         if let stateLocation {

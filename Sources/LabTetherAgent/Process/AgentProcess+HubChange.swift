@@ -37,7 +37,7 @@ extension AgentProcess {
         return false
     }
 
-    /// A CA file saved before it had to verify the Hub alone is checked once
+    /// A saved CA file that has never verified this Hub alone is checked once
     /// per start. When it passes it is the agent's only root from this start
     /// on; when it does not, or the Hub does not answer, the agent starts
     /// with it as before and one line says so.
@@ -54,6 +54,19 @@ extension AgentProcess {
             retry()
         }
         return false
+    }
+
+    /// The same check after each connection: a Hub that was away at start is
+    /// there now. A file that passes is the only root from the next start.
+    func recheckChosenCAAfterConnect() {
+        guard settings.chosenCANeedsCheck, !recheckingChosenCA else { return }
+        recheckingChosenCA = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let line = await self.settings.checkSavedChosenCA()
+            self.recheckingChosenCA = false
+            if let line { self.logBuffer.append("[app] \(line)") }
+        }
     }
 
     private func confirmOtherHub(_ verdict: HubChangeVerdict) -> Bool {

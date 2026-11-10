@@ -37,6 +37,8 @@ final class AgentProcess: ObservableObject {
     var checkingChosenCA = false
     /// The saved CA file was checked for the start now under way.
     var chosenCACheckedForThisStart = false
+    /// The check after a connection; kept apart so it never holds up a start.
+    var recheckingChosenCA = false
     let crashCoordinator = CrashRestartCoordinator()
 
     private var settingsObserver: AnyCancellable?
@@ -106,6 +108,7 @@ final class AgentProcess: ObservableObject {
         guard process == nil && !isStarting else { return }
         guard hubChangeSettled(then: { [weak self] in self?.start(resetCrashHistory: resetCrashHistory) }) else { return }
         guard chosenCASettled(then: { [weak self] in self?.start(resetCrashHistory: resetCrashHistory) }) else { return }
+        chosenCACheckedForThisStart = false   // every start checks again
         cancelCrashRestart()
 
         if resetCrashHistory {
@@ -222,7 +225,6 @@ final class AgentProcess: ObservableObject {
         self.process = proc
         self.isRunning = true
         self.isStarting = false
-        self.chosenCACheckedForThisStart = false   // the next start checks again
         status.markStarting(pid: proc.processIdentifier)
 
         logBuffer.append("[app] Agent started (PID \(proc.processIdentifier))")
