@@ -110,6 +110,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // After "Reset and uninstall" the agent is stopped and everything is
+        // gone; saving here would write the folder and the history back.
+        guard !UninstallManager.removedEverything else { return }
         AppState.shared.sessionHistory.save()
         AppState.shared.bandwidthTracker.save()
         // Force-kill the agent process so it doesn't orphan
