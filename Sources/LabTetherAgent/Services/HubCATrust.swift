@@ -163,11 +163,26 @@ enum HubCATrust {
         return evaluate(chain: chain, host: host, savedAnchors: saved, fetchedCA: fetched)
     }
 
-    /// The same-Hub proof for a new address: its chain validates against the saved CA alone.
-    static func isServedBy(savedCAFile: String, hubURL: String) async -> Bool {
-        guard let url = ConnectionTester.hubIdentityURL(from: hubURL), url.scheme == "https", let host = url.host,
-              let saved = try? ConnectionTester.trustedCertificates(for: savedCAFile) else { return false }
-        return chainsOnly(to: saved, chain: await servedChain(url), host: host)
+    /// The fingerprint of the Hub's own CA at `hubURL`, proven: the address
+    /// completed a TLS handshake that validates against that CA alone (so it
+    /// holds a certificate from that CA for its host name, and its key). With
+    /// `among`, only one of those certificates counts. The request is the
+    /// public identity route and carries nothing.
+    static func provenOwnCA(hubURL: String, among allowed: [SecCertificate]?) async -> String? {
+        guard let url = ConnectionTester.hubIdentityURL(from: hubURL), url.scheme == "https" else { return nil }
+        let chain = await servedChain(url)
+        guard !chain.isEmpty else { return nil }
+        var found = servedCA(in: chain)
+        if found == nil { found = await downloadedCA(from: url) }
+        guard let candidate = found else { return nil }
+        let value = fingerprint(of: candidate)
+        if let allowed, !allowed.contains(where: { fingerprint(of: $0) == value }) { return nil }
+        let session = bareSession(ChainCapture(completeHandshake: true, onlyAnchors: [candidate]))
+        defer { session.invalidateAndCancel() }
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 8)
+        request.httpShouldHandleCookies = false
+        guard let (_, response) = try? await session.data(for: request), response is HTTPURLResponse else { return nil }
+        return value
     }
 
     /// The request for the Hub's public CA file: no credential, cookie or cache.
@@ -193,7 +208,7 @@ enum HubCATrust {
     }
 
     private static func servedChain(_ url: URL) async -> [SecCertificate] {
-        let capture = ChainCapture(completeHandshake: false)
+        let capture = ChainCapture(completeHandshake: false, onlyAnchors: nil)
         let session = bareSession(capture)
         defer { session.invalidateAndCancel() }
         var request = URLRequest(url: url)
@@ -205,7 +220,7 @@ enum HubCATrust {
 
     private static func downloadedCA(from url: URL) async -> SecCertificate? {
         guard let request = caRequest(for: url) else { return nil }
-        let session = bareSession(ChainCapture(completeHandshake: true))
+        let session = bareSession(ChainCapture(completeHandshake: true, onlyAnchors: nil))
         defer { session.invalidateAndCancel() }
         guard let (data, response) = try? await session.data(for: request),
               (response as? HTTPURLResponse)?.statusCode == 200, data.count <= 65_536,
@@ -214,14 +229,19 @@ enum HubCATrust {
     }
 
     /// Reads the served chain. For the chain probe it then stops the handshake;
-    /// for the public CA download it lets this one unverified GET through.
+    /// for the public CA download it lets this one unverified GET through; with
+    /// `onlyAnchors` it goes on only when the chain validates against them alone.
     private final class ChainCapture: NSObject, URLSessionTaskDelegate {
         private let completeHandshake: Bool
+        private let onlyAnchors: [SecCertificate]?
         private let lock = NSLock()
         private var captured: [SecCertificate] = []
         var chain: [SecCertificate] { lock.lock(); defer { lock.unlock() }; return captured }
 
-        init(completeHandshake: Bool) { self.completeHandshake = completeHandshake }
+        init(completeHandshake: Bool, onlyAnchors: [SecCertificate]?) {
+            self.completeHandshake = completeHandshake
+            self.onlyAnchors = onlyAnchors
+        }
 
         func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge,
                         completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
@@ -242,6 +262,14 @@ enum HubCATrust {
             }
             let chain = (SecTrustCopyCertificateChain(trust) as? [SecCertificate]) ?? []
             lock.lock(); captured = chain; lock.unlock()
+            if let onlyAnchors {
+                SecTrustSetAnchorCertificates(trust, onlyAnchors as CFArray)
+                SecTrustSetAnchorCertificatesOnly(trust, true)
+                guard SecTrustEvaluateWithError(trust, nil) else {
+                    completionHandler(.cancelAuthenticationChallenge, nil)
+                    return
+                }
+            }
             if completeHandshake {
                 completionHandler(.useCredential, URLCredential(trust: trust))
             } else {

@@ -146,4 +146,109 @@ final class HubCATrustTests: XCTestCase {
         XCTAssertFalse(request.httpShouldHandleCookies)
         XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
     }
+
+    // MARK: - Trust and the saved token (security)
+
+    @MainActor
+    private func enrolledSettings(_ store: UserDefaults, _ folder: URL) throws -> AgentSettings {
+        // This Mac is enrolled with Hub A: token, A's CA, and what was
+        // recorded about A when the token connected there.
+        let settings = AgentSettings(testSettingsStore: store, appSupportDirectory: folder)
+        settings.hubURL = "wss://nas01.example.com:8443/ws/agent"
+        try settings.persistRuntimeSecret("hub-a-token", to: settings.tokenFilePath, issueKey: "test.token", label: "Test token")
+        try Data(Self.caPEM.utf8).write(to: URL(fileURLWithPath: settings.managedHubCAPath))
+        XCTAssertFalse(try settings.dropCredentialsFromOtherHub())
+        settings.setStoredRecord("wss://nas01.example.com:8443 \(Self.caFingerprint)", key: AgentSettings.hubCARecord)
+        settings.setStoredRecord("wss://nas01.example.com:8443 key-of-hub-a", key: AgentSettings.hubServerKeyRecord)
+        return settings
+    }
+
+    /// The hole a review found: with a token for Hub A saved, pointing the app
+    /// at Hub B and pressing "Trust this Hub" replaced A's CA with B's, and
+    /// the same-Hub check then took B for A, so A's token would go to B.
+    @MainActor
+    func testTrustingAnotherHubNeverMakesItTheTokensHub() async throws {
+        let suite = "LabTetherAgentTests.\(UUID().uuidString)"
+        let store = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("lt-trust-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer {
+            store.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: folder)
+        }
+        let settings = try enrolledSettings(store, folder)
+        let hubB = "wss://nas02.example.com:8443/ws/agent"
+        let offerB = HubCAOffer(pem: Self.otherCAPEM + "\n", fingerprint: "b-ca-fingerprint")
+        let probeB = HubIdentityProbe(serverKey: { _ in "key-of-hub-b" }, ownCA: { _ in "b-ca-fingerprint" })
+
+        // The address changes to Hub B and the person trusts B's certificate.
+        settings.hubURL = hubB
+        var checkedAgainst: [String] = []
+        let trust = HubTrustFlow(
+            quickTest: { _, _, caFile in
+                caFile == settings.pendingHubCAPath ? .success(responseTimeMs: 2)
+                    : .failure(error: ConnectionTester.certificateFailureMessage)
+            },
+            check: { _, saved in checkedAgainst.append(saved); return .offer(offerB) }
+        )
+        let first = await trust.test(hubURL: hubB, settings: settings)
+        XCTAssertNil(first)
+        XCTAssertEqual(checkedAgainst, [""], "Hub A's CA is not what B is measured against")
+        let trusted = await trust.trust(settings: settings)
+        XCTAssertEqual(trusted, .success(responseTimeMs: 2))
+
+        // Hub A's CA is still the agent's CA; B's waits beside it.
+        XCTAssertEqual(try String(contentsOfFile: settings.managedHubCAPath, encoding: .utf8), Self.caPEM)
+        XCTAssertEqual(try String(contentsOfFile: settings.pendingHubCAPath, encoding: .utf8), Self.otherCAPEM + "\n")
+        // B is another Hub, whatever was just trusted for it: the warning comes first.
+        XCTAssertTrue(settings.hubChangeNeedsConfirmation)
+        let verdict = await settings.checkHubChange(probe: probeB)
+        XCTAssertEqual(verdict, .otherHub)
+        XCTAssertTrue(settings.hubChangeNeedsConfirmation)
+        XCTAssertTrue(settings.hasPersistedAgentToken, "nothing is removed before the person agrees")
+        XCTAssertFalse(settings.savedTokenOrigins().contains("nas02.example.com:8443"))
+
+        // Only after Continue: A's token goes, then B's CA becomes the agent's CA.
+        settings.confirmedHubChangeScope = "wss://nas02.example.com:8443"
+        XCTAssertTrue(try settings.dropCredentialsFromOtherHub())
+        XCTAssertFalse(settings.hasPersistedAgentToken)
+        XCTAssertEqual(try String(contentsOfFile: settings.managedHubCAPath, encoding: .utf8), Self.otherCAPEM + "\n")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: settings.pendingHubCAPath))
+        XCTAssertEqual(settings.storedRecord(AgentSettings.hubCARecord), "")
+    }
+
+    /// The good path stays: the same Hub at another address (the CA and
+    /// server key recorded at enrollment) keeps the token.
+    @MainActor
+    func testSameHubAtAnotherAddressIsStillTheSameHub() async throws {
+        let suite = "LabTetherAgentTests.\(UUID().uuidString)"
+        let store = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("lt-trust-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer {
+            store.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: folder)
+        }
+        let settings = try enrolledSettings(store, folder)
+        settings.hubURL = "wss://192.0.2.10:8443/ws/agent"
+        let sameHub = HubIdentityProbe(serverKey: { _ in "key-of-hub-a" }, ownCA: { _ in Self.caFingerprint })
+        let verdict = await settings.checkHubChange(probe: sameHub)
+        XCTAssertEqual(verdict, .sameHub)
+        XCTAssertFalse(settings.hubChangeNeedsConfirmation)
+        XCTAssertFalse(try settings.dropCredentialsFromOtherHub())
+        XCTAssertTrue(settings.hasPersistedAgentToken)
+        XCTAssertEqual(try String(contentsOfFile: settings.managedHubCAPath, encoding: .utf8), Self.caPEM)
+
+        // With nothing recorded for the token's Hub there is no proof at all.
+        let bare = AgentSettings(testSettingsStore: try XCTUnwrap(UserDefaults(suiteName: suite + ".bare")),
+                                 appSupportDirectory: folder.appendingPathComponent("bare"))
+        try FileManager.default.createDirectory(at: bare.appSupportDirectory, withIntermediateDirectories: true)
+        bare.hubURL = "wss://nas01.example.com:8443/ws/agent"
+        try bare.persistRuntimeSecret("hub-a-token", to: bare.tokenFilePath, issueKey: "test.token", label: "Test token")
+        XCTAssertFalse(try bare.dropCredentialsFromOtherHub())
+        bare.hubURL = "wss://192.0.2.10:8443/ws/agent"
+        let unknown = await bare.checkHubChange(probe: sameHub)
+        XCTAssertEqual(unknown, .unknown)
+        UserDefaults().removePersistentDomain(forName: suite + ".bare")
+    }
 }

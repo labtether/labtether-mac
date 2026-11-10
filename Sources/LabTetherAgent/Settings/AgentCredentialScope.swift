@@ -32,12 +32,13 @@ extension AgentSettings {
                 // Another address of the same Hub keeps the token.
                 try allowSavedToken(forScope: scope)
             } else {
-                // A CA just trusted in setup for the new Hub stays.
-                let keepCA = storedRecord(Self.trustedHubCAScopeRecord) == scope
-                for name in Self.hubBoundFileNames where !(keepCA && name == Self.managedHubCAName) {
+                for name in Self.hubBoundFileNames {
                     if try removeChildFile(name) { dropped = true }
                 }
                 forgetHubIdentity()
+                // The old Hub's token and CA are gone; a CA the person
+                // trusted for the new Hub may now become the agent's CA.
+                try promotePendingHubCA(for: scope)
             }
         }
         setStoredRecord(scope, key: Self.agentTokenHubKey)

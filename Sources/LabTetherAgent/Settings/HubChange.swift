@@ -15,9 +15,28 @@ enum HubChangeVerdict: Equatable {
     case unknown
 }
 
+/// How a new address is compared with the token's own Hub. The live probes
+/// talk to the address; tests supply their own.
+struct HubIdentityProbe {
+    /// SHA-256 of the TLS server key the address presents; nil when unreachable.
+    var serverKey: (_ hubURL: String) async -> String?
+    /// Fingerprint of the Hub's own CA, when the address completed a verified
+    /// TLS handshake against that CA alone; nil otherwise.
+    var ownCA: (_ hubURL: String) async -> String?
+
+    static let live = HubIdentityProbe(
+        serverKey: { await HubServerKey.fingerprint(hubURL: $0) },
+        ownCA: { await HubCATrust.provenOwnCA(hubURL: $0, among: nil) }
+    )
+}
+
 extension AgentSettings {
     /// "<scope> <sha256>" of the TLS server key of the Hub the token works with.
     static let hubServerKeyRecord = "hubServerKey"
+    /// "<scope> <sha256>" of the CA of the Hub the token works with, recorded
+    /// when the token connected there. Never taken from a CA file on disk:
+    /// that file can hold a CA trusted later for another address.
+    static let hubCARecord = "hubCA"
     /// Space-separated scopes proven to be the token's Hub.
     static let sameHubScopesRecord = "sameHubScopes"
 
@@ -61,35 +80,50 @@ extension AgentSettings {
         return confirmedHubChangeScope != scope
     }
 
+    /// The value recorded for the token's own Hub under `key`, if any.
+    private func tokenHubRecord(_ key: String, tokenScope: String) -> String? {
+        let parts = storedRecord(key).split(separator: " ").map(String.init)
+        return parts.count == 2 && parts[0] == tokenScope ? parts[1] : nil
+    }
+
     /// Settings and the restart gate: same Hub, another Hub, or unknown.
-    func checkHubChange() async -> HubChangeVerdict {
+    ///
+    /// The new address is compared only with what was recorded for the
+    /// token's own Hub when the token connected there (its CA and its server
+    /// key). A CA trusted later for the new address proves nothing here.
+    func checkHubChange(probe: HubIdentityProbe = .live) async -> HubChangeVerdict {
         guard let tokenScope = savedTokenScope, let scope = pendingHubScope,
               let url = normalizedHubWebSocketURL(), scope != tokenScope else { return .unchanged }
         if isKnownSameHub(scope) { return .sameHub }
-        // Same Hub = same CA: the new address proves the CA kept for this Hub.
-        if hasManagedHubCA, await HubCATrust.isServedBy(savedCAFile: managedHubCAPath, hubURL: url) {
-            rememberSameHub(scope)
-            return .sameHub
+        let knownCA = tokenHubRecord(Self.hubCARecord, tokenScope: tokenScope)
+        let knownKey = tokenHubRecord(Self.hubServerKeyRecord, tokenScope: tokenScope)
+        guard knownCA != nil || knownKey != nil else { return .unknown }
+        var answered = false
+        if let knownCA, let ca = await probe.ownCA(url) {
+            answered = true
+            if ca == knownCA { rememberSameHub(scope); return .sameHub }
         }
-        let record = storedRecord(Self.hubServerKeyRecord).split(separator: " ").map(String.init)
-        guard record.count == 2, record[0] == tokenScope else { return .unknown }
-        guard let key = await HubServerKey.fingerprint(hubURL: url) else {
-            return url.hasPrefix("wss://") ? .unknown : .otherHub
+        if let knownKey, let key = await probe.serverKey(url) {
+            answered = true
+            if key == knownKey { rememberSameHub(scope); return .sameHub }
         }
-        guard key == record[1] else { return .otherHub }
-        rememberSameHub(scope)
-        return .sameHub
+        if !answered && url.hasPrefix("wss://") { return .unknown }
+        return .otherHub
     }
 
-    /// Keeps the TLS server key of the Hub the token works with. Called on
-    /// each connection, when the token has just been accepted there.
+    /// Records the server key and the CA of the Hub the token works with.
+    /// Called on each connection, when the token has just been accepted there.
     func recordHubServerKey() {
         guard let url = normalizedHubWebSocketURL(), url.hasPrefix("wss://"),
               let scope = pendingHubScope, scope == savedTokenScope else { return }
+        let trusted = (try? ConnectionTester.trustedCertificates(for: effectiveTLSCAFile)) ?? []
         Task { @MainActor [weak self] in
-            guard let key = await HubServerKey.fingerprint(hubURL: url), let self,
-                  self.savedTokenScope == scope else { return }
-            self.setStoredRecord("\(scope) \(key)", key: Self.hubServerKeyRecord)
+            let key = await HubServerKey.fingerprint(hubURL: url)
+            // Only a CA this Mac already trusts for the Hub, proven by a full handshake.
+            let ca = await HubCATrust.provenOwnCA(hubURL: url, among: trusted)
+            guard let self, self.savedTokenScope == scope, self.pendingHubScope == scope else { return }
+            if let key { self.setStoredRecord("\(scope) \(key)", key: Self.hubServerKeyRecord) }
+            if let ca { self.setStoredRecord("\(scope) \(ca)", key: Self.hubCARecord) }
         }
     }
 
@@ -103,6 +137,7 @@ extension AgentSettings {
     func forgetHubIdentity() {
         setStoredRecord("", key: Self.sameHubScopesRecord)
         setStoredRecord("", key: Self.hubServerKeyRecord)
+        setStoredRecord("", key: Self.hubCARecord)
         confirmedHubChangeScope = nil
     }
 
