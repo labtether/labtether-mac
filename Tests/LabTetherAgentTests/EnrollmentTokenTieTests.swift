@@ -84,6 +84,28 @@ final class EnrollmentTokenTieTests: XCTestCase {
         XCTAssertEqual(settings.enrollmentTokenFile, .untied, "the trusted CA is not the one the token was made for")
     }
 
+    /// The address is changed before this Mac ever enrolled, and the person
+    /// trusts the new Hub's certificate. The next start used to delete that
+    /// certificate as "the previous Hub's", so the menu said "not trusted"
+    /// right after Trust this Hub. And the installer's token, made for the
+    /// first Hub, must still not go to the trusted new one.
+    func testTrustingANewHubBeforeEnrollingKeepsItsCAAndStillHoldsTheTokenBack() throws {
+        let (settings, _, cleanup) = try makeSettings()
+        defer { cleanup() }
+        settings.hubURL = hubA
+        try installToken(settings, tie: #"{"hub_url":"wss://nas01.example.com:8443"}"#)
+        XCTAssertFalse(try settings.dropCredentialsFromOtherHub())   // first start, for Hub A
+
+        settings.hubURL = hubB
+        try settings.saveTrustedHubCA(
+            HubCAOffer(pem: HubCATrustTests.caPEM, fingerprint: HubCATrustTests.caFingerprint), forHubURL: hubB)
+        _ = try settings.dropCredentialsFromOtherHub()               // the next start, for Hub B
+        XCTAssertEqual(settings.hubCAPin, .file(settings.managedHubCAPath), "the CA just trusted for Hub B is still there")
+        XCTAssertEqual(settings.enrollmentTokenFile, .untied)
+        XCTAssertNil(try settings.buildEnvironment()["LABTETHER_ENROLLMENT_TOKEN_FILE"])
+        XCTAssertFalse(settings.isConfigured)
+    }
+
     /// A token typed in the app is written to the same file for the agent. It
     /// gets its tie from the app, so it is still usable after a relaunch.
     func testATypedTokenIsTiedToTheHubItWasTypedFor() throws {
