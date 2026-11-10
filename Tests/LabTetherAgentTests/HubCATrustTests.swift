@@ -8,7 +8,7 @@ final class HubCATrustTests: XCTestCase {
     // Throwaway certificates made for this test (their keys were not kept):
     // a CA, a server certificate for hub.example.com signed by it (valid
     // 2026-11-10 to 2029-01-18), and an unrelated CA.
-    private static let caPEM = """
+    static let caPEM = """
         -----BEGIN CERTIFICATE-----
         MIIBmDCCAT2gAwIBAgIUAzd+au5P9Ja6eStEdHzUB3SBQpcwCgYIKoZIzj0EAwIw
         GTEXMBUGA1UEAwwORXhhbXBsZSBIdWIgQ0EwHhcNMjYxMTEwMDYwNzQzWhcNNDYx
@@ -48,7 +48,7 @@ final class HubCATrustTests: XCTestCase {
         /1zBjF/BgzdM2tuiVqik61xKvqmbs3MMAZn9
         -----END CERTIFICATE-----
         """
-    private static let caFingerprint = "2d7e54ca6aa0d37f9256473f4dd8a70f64497e02220cb27bcb31ac9008df1a91"
+    static let caFingerprint = "2d7e54ca6aa0d37f9256473f4dd8a70f64497e02220cb27bcb31ac9008df1a91"
     private let host = "hub.example.com"
     /// Inside the server certificate's validity, so the test does not age.
     private let day = Date(timeIntervalSince1970: 1_812_000_000) // 2027-06-03

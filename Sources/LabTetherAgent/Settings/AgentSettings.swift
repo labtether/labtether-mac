@@ -264,7 +264,8 @@ final class AgentSettings: ObservableObject {
             apiToken: apiToken,
             enrollmentToken: enrollmentToken,
             hasPersistedAgentToken: hasPersistedAgentToken,
-            hasPersistedEnrollmentToken: hasPersistedEnrollmentToken
+            // Only a token file made for this Hub counts; see EnrollmentTokenTie.
+            hasPersistedEnrollmentToken: enrollmentTokenFile == .tied
         )
     }
 

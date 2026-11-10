@@ -130,6 +130,13 @@ final class AgentProcess: ObservableObject {
         // Validate config before launching
         guard settings.isConfigured else {
             debugBootProcess("start aborted: settings.isConfigured=false")
+            if !droppedOtherHubCredentials, settings.enrollmentTokenFile == .untied {
+                // A token file that is not for this Hub is never sent. Setup asks for one.
+                status.markError(AgentSettings.untiedEnrollmentTokenMessage)
+                logBuffer.append("[app] The enrollment token file was not made for this Hub and was not sent.")
+                NotificationCenter.default.post(name: .labTetherNeedsHubToken, object: nil)
+                return
+            }
             status.markError(droppedOtherHubCredentials
                 ? "The Hub changed. Add an enrollment token from the new Hub in Settings."
                 : "Add the Hub address and a token in Settings.")

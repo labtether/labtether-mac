@@ -101,6 +101,10 @@ final class AgentSettingsNormalizationTests: XCTestCase {
         try FileManager.default.setAttributes(
             [.posixPermissions: 0o600], ofItemAtPath: settings.enrollmentTokenFilePath
         )
+        // An installer's token file is used only with its tie to the Hub in use.
+        settings.hubURL = "wss://nas01.example.com:8443/ws/agent"
+        try Data(#"{"hub_url":"wss://nas01.example.com:8443"}"#.utf8).write(
+            to: support.appendingPathComponent(AgentSettings.enrollmentTokenTieName))
 
         let pending = try settings.buildEnvironment()
         XCTAssertEqual(pending["AGENT_GROUP_ID"], "qa")

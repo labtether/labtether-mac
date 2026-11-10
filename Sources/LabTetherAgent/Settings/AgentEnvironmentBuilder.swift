@@ -24,15 +24,21 @@ enum AgentEnvironmentBuilder {
                 issueKey: "runtime.enrollmentToken",
                 label: "Enrollment token"
             )
+            try settings.tieEnrollmentTokenToCurrentHub()
             env["LABTETHER_ENROLLMENT_TOKEN_FILE"] = settings.enrollmentTokenFilePath
         case .preserve:
-            env["LABTETHER_ENROLLMENT_TOKEN_FILE"] = settings.enrollmentTokenFilePath
+            // A file somebody else put there is sent only to the Hub it was
+            // made for. Otherwise it stays where it is, unsent.
+            if settings.enrollmentTokenFile == .tied {
+                env["LABTETHER_ENROLLMENT_TOKEN_FILE"] = settings.enrollmentTokenFilePath
+            }
         case .remove:
             try settings.removeRuntimeSecretIfNeeded(
                 at: settings.enrollmentTokenFilePath,
                 issueKey: "runtime.enrollmentToken",
                 label: "Enrollment token"
             )
+            settings.removeEnrollmentTokenTie()
         }
         switch AgentSettings.runtimeAPITokenFileAction(
             apiToken: trimmedAPIToken,
@@ -67,7 +73,7 @@ enum AgentEnvironmentBuilder {
         env.merge(connectionIntentEnvironment(
             groupID: settings.groupID,
             enrollmentToken: trimmedEnrollmentToken,
-            hasPersistedEnrollmentToken: settings.hasPersistedEnrollmentToken,
+            hasPersistedEnrollmentToken: settings.enrollmentTokenFile == .tied,
             tlsSkipVerify: settings.tlsSkipVerify,
             tlsCAFile: pinnedCAFile
         )) { _, new in new }

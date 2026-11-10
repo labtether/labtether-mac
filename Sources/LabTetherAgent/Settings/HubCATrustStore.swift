@@ -70,7 +70,7 @@ extension AgentSettings {
         return nil
     }
 
-    private static func firstFingerprint(inPEMFile path: String) -> String? {
+    static func firstFingerprint(inPEMFile path: String) -> String? {
         guard let data = FileManager.default.contents(atPath: path), data.count <= 1_048_576,
               let text = String(data: data, encoding: .utf8) else { return nil }
         return HubCATrust.certificates(fromPEM: text).first.map { HubCATrust.fingerprint(of: $0) }

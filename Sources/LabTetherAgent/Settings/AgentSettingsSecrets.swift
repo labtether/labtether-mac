@@ -110,6 +110,7 @@ extension AgentSettings {
             issueKey: "runtime.enrollmentToken",
             label: "Enrollment token"
         )
+        removeEnrollmentTokenTie()
     }
 
     func synchronizeRuntimeSecretFilesAfterSecretChange(account: String) {
@@ -132,6 +133,7 @@ extension AgentSettings {
                 issueKey: "runtime.enrollmentToken",
                 label: "Enrollment token"
             )
+            removeEnrollmentTokenTie()
         case Self.webrtcTurnPassAccount:
             try? removeRuntimeSecretIfNeeded(
                 at: webrtcTurnPassFilePath,
