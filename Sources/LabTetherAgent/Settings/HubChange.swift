@@ -6,26 +6,28 @@ import Foundation
 enum HubChangeVerdict: Equatable {
     /// Same address, or no saved token: nothing to decide.
     case unchanged
-    /// An address the Hub gave for this token, or the same TLS server key.
+    /// An address the Hub gave for this token, or one that proved it holds
+    /// the Hub's server key or a certificate from the Hub's own CA.
     case sameHub
-    /// The new address answers with another server key, or plain ws:// that
+    /// The new address answers without that proof, or is plain ws:// that
     /// the Hub never named.
     case otherHub
-    /// The new address could not be reached to compare its server key.
+    /// The new address could not be reached to ask for proof.
     case unknown
 }
 
 /// How a new address is compared with the token's own Hub. The live probes
 /// talk to the address; tests supply their own.
 struct HubIdentityProbe {
-    /// SHA-256 of the TLS server key the address presents; nil when unreachable.
-    var serverKey: (_ hubURL: String) async -> String?
+    /// Whether the address holds the private key recorded for the token's
+    /// Hub: proven only by a finished TLS handshake with that key.
+    var holdsServerKey: (_ hubURL: String, _ key: String) async -> HubServerKey.Proof
     /// Fingerprint of the Hub's own CA, when the address completed a verified
     /// TLS handshake against that CA alone; nil otherwise.
     var ownCA: (_ hubURL: String) async -> String?
 
     static let live = HubIdentityProbe(
-        serverKey: { await HubServerKey.fingerprint(hubURL: $0) },
+        holdsServerKey: { await HubServerKey.proves($1, hubURL: $0) },
         ownCA: { await HubCATrust.provenOwnCA(hubURL: $0, among: nil) }
     )
 }
@@ -103,9 +105,12 @@ extension AgentSettings {
             answered = true
             if ca == knownCA { rememberSameHub(scope); return .sameHub }
         }
-        if let knownKey, let key = await probe.serverKey(url) {
-            answered = true
-            if key == knownKey { rememberSameHub(scope); return .sameHub }
+        if let knownKey {
+            switch await probe.holdsServerKey(url, knownKey) {
+            case .proven: rememberSameHub(scope); return .sameHub
+            case .notProven: answered = true
+            case .unreachable: break
+            }
         }
         if !answered && url.hasPrefix("wss://") { return .unknown }
         return .otherHub
@@ -118,7 +123,8 @@ extension AgentSettings {
               let scope = pendingHubScope, scope == savedTokenScope else { return }
         let trusted = (try? ConnectionTester.trustedCertificates(for: effectiveTLSCAFile)) ?? []
         Task { @MainActor [weak self] in
-            let key = await HubServerKey.fingerprint(hubURL: url)
+            // Only from a connection this Mac verifies, as the agent does.
+            let key = await HubServerKey.verifiedFingerprint(hubURL: url, anchors: trusted)
             // Only a CA this Mac already trusts for the Hub, proven by a full handshake.
             let ca = await HubCATrust.provenOwnCA(hubURL: url, among: trusted)
             guard let self, self.savedTokenScope == scope, self.pendingHubScope == scope else { return }

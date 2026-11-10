@@ -179,7 +179,7 @@ final class HubCATrustTests: XCTestCase {
         let settings = try enrolledSettings(store, folder)
         let hubB = "wss://nas02.example.com:8443/ws/agent"
         let offerB = HubCAOffer(pem: Self.otherCAPEM + "\n", fingerprint: "b-ca-fingerprint")
-        let probeB = HubIdentityProbe(serverKey: { _ in "key-of-hub-b" }, ownCA: { _ in "b-ca-fingerprint" })
+        let probeB = HubIdentityProbe(holdsServerKey: { _, _ in .notProven }, ownCA: { _ in "b-ca-fingerprint" })
 
         // The address changes to Hub B and the person trusts B's certificate.
         settings.hubURL = hubB
@@ -217,6 +217,37 @@ final class HubCATrustTests: XCTestCase {
         XCTAssertEqual(settings.storedRecord(AgentSettings.hubCARecord), "")
     }
 
+    /// Showing the Hub's certificate is not proof of being the Hub: a
+    /// certificate is public. An address that answers without finishing a
+    /// handshake with the Hub's key is another Hub; one that does not answer
+    /// is unknown. Neither keeps the token without asking.
+    @MainActor
+    func testAnAddressThatCannotProveTheHubsKeyIsNotTheSameHub() async throws {
+        let suite = "LabTetherAgentTests.\(UUID().uuidString)"
+        let store = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("lt-trust-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer {
+            store.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: folder)
+        }
+        let settings = try enrolledSettings(store, folder)
+        settings.hubURL = "wss://192.0.2.10:8443/ws/agent"
+        var askedFor: [String] = []
+        let copiedCertificate = HubIdentityProbe(
+            holdsServerKey: { _, key in askedFor.append(key); return .notProven },
+            ownCA: { _ in nil }
+        )
+        let shown = await settings.checkHubChange(probe: copiedCertificate)
+        XCTAssertEqual(shown, .otherHub)
+        XCTAssertEqual(askedFor, ["key-of-hub-a"], "the address is asked to prove the key recorded for the token's Hub")
+        let silent = HubIdentityProbe(holdsServerKey: { _, _ in .unreachable }, ownCA: { _ in nil })
+        let unanswered = await settings.checkHubChange(probe: silent)
+        XCTAssertEqual(unanswered, .unknown)
+        XCTAssertTrue(settings.hubChangeNeedsConfirmation)
+        XCTAssertFalse(settings.savedTokenOrigins().contains("192.0.2.10:8443"))
+    }
+
     /// The good path stays: the same Hub at another address (the CA and
     /// server key recorded at enrollment) keeps the token.
     @MainActor
@@ -231,7 +262,7 @@ final class HubCATrustTests: XCTestCase {
         }
         let settings = try enrolledSettings(store, folder)
         settings.hubURL = "wss://192.0.2.10:8443/ws/agent"
-        let sameHub = HubIdentityProbe(serverKey: { _ in "key-of-hub-a" }, ownCA: { _ in Self.caFingerprint })
+        let sameHub = HubIdentityProbe(holdsServerKey: { _, key in key == "key-of-hub-a" ? .proven : .notProven }, ownCA: { _ in Self.caFingerprint })
         let verdict = await settings.checkHubChange(probe: sameHub)
         XCTAssertEqual(verdict, .sameHub)
         XCTAssertFalse(settings.hubChangeNeedsConfirmation)
