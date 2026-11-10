@@ -27,17 +27,15 @@ struct LabTetherAgentApp: App {
                 onPopOut: { AppState.shared.popOutController.toggle(appState: AppState.shared) }
             )
             .environment(\.animationsActive, appState.apiClient.animationsActive)
-            .onAppear {
-                appState.apiClient.setMenuVisible(true)
-                appState.screenSharing.setMenuVisible(true)
-                appState.status.setMenuVisible(true)
-            }
-            .onDisappear {
-                appState.apiClient.setMenuVisible(false)
-                appState.screenSharing.setMenuVisible(false)
-                appState.status.setMenuVisible(false)
-                appState.refreshMenuBarLabel()
-            }
+            // The menu window is ordered in and out, not rebuilt: onAppear
+            // would report only the first opening. Ask the window itself, so
+            // every opening refreshes at once and a closed menu polls slowly.
+            .background(WindowVisibilityReporter { visible in
+                appState.apiClient.setMenuVisible(visible)
+                appState.screenSharing.setMenuVisible(visible)
+                appState.status.setMenuVisible(visible)
+                if !visible { appState.refreshMenuBarLabel() }
+            })
         } label: {
             let presentation = appState.menuBarLabelPresentation
 
