@@ -18,15 +18,16 @@ final class CrashRestartCoordinator: ObservableObject {
     private var crashCooldownTask: Task<Void, Never>?
 
     static let maxCrashRestarts = 5
-    static let crashWindowSeconds: TimeInterval = 60
+    /// Long enough to hold every backoff delay below (3 + 6 + 12 + 24 + 48 s),
+    /// so a core that quits at once reaches the cooldown instead of cycling.
+    static let crashWindowSeconds: TimeInterval = 300
     static let crashCooldownSeconds: TimeInterval = 300 // 5 minutes
 
     /// Record a crash and return the appropriate action.
     ///
     /// Callers are responsible for acting on the returned value (scheduling a
     /// delayed restart or entering cooldown).
-    func recordCrash() -> CrashAction {
-        let now = Date()
+    func recordCrash(at now: Date = Date()) -> CrashAction {
 
         // Prune timestamps outside the rolling window
         crashTimestamps = crashTimestamps.filter {

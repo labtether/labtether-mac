@@ -157,7 +157,7 @@ final class AgentHeroPresentationTests: XCTestCase {
         XCTAssertEqual(subtitle(reason: status.lastErrorReason), "Can't reach the Hub")
         XCTAssertEqual(
             HubConnectReason(code: status.lastErrorReason)?.fix,
-            "Check System Settings > Privacy & Security > Local Network and turn on LabTether Agent."
+            "Check System Settings › Privacy & Security › Local Network and turn on LabTether Agent."
         )
         XCTAssertEqual(subtitle(reason: nil), "Waiting for the Hub")
         XCTAssertEqual(subtitle(reason: "something_new"), "Waiting for the Hub")

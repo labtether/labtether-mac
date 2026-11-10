@@ -111,7 +111,7 @@ enum ConnectionTester {
         tlsCAOnly: Bool = false
     ) async -> ConnectionTestResult {
         guard let identityURL = hubIdentityURL(from: hubURL) else {
-            return .failure(error: "Invalid hub URL.")
+            return .failure(error: "This is not a valid Hub address.")
         }
 
         let start = Date()
@@ -158,10 +158,10 @@ enum ConnectionTester {
         onUpdate: @escaping ([DiagnosticStep]) -> Void
     ) async {
         var steps = [
-            DiagnosticStep(name: "DNS Resolution"),
-            DiagnosticStep(name: "TCP Connect"),
-            DiagnosticStep(name: "TLS Handshake"),
-            DiagnosticStep(name: "HTTP Reachability"),
+            DiagnosticStep(name: "DNS lookup"),
+            DiagnosticStep(name: "TCP connection"),
+            DiagnosticStep(name: "TLS handshake"),
+            DiagnosticStep(name: "HTTP check"),
         ]
         onUpdate(steps)
 
@@ -170,7 +170,7 @@ enum ConnectionTester {
               let host = baseURL.host
         else {
             for index in steps.indices {
-                steps[index].status = .failure("Invalid hub URL")
+                steps[index].status = .failure("This is not a valid Hub address.")
             }
             onUpdate(steps)
             return
@@ -249,7 +249,7 @@ enum ConnectionTester {
     /// Formats the diagnostics waterfall as a copyable plain-text report.
     static func formatDiagnosticsReport(_ steps: [DiagnosticStep], hubURL: String) -> String {
         var lines: [String] = []
-        lines.append("Connection Diagnostics Report")
+        lines.append("Connection diagnostics")
         lines.append("Hub: \(redactedHubURL(hubURL))")
         lines.append(String(repeating: "-", count: 40))
 
@@ -303,7 +303,7 @@ enum ConnectionTester {
         body: Data
     ) -> String? {
         guard let statusCode else {
-            return "The endpoint returned an invalid HTTP response."
+            return "This address did not answer over HTTP."
         }
         guard statusCode == 200 else {
             return "Hub verification failed (HTTP \(statusCode))."
@@ -317,7 +317,7 @@ enum ConnectionTester {
         guard let object = try? JSONSerialization.jsonObject(with: body),
               let payload = object as? [String: Any]
         else {
-            return "The endpoint returned an invalid hub response."
+            return "This address is not a LabTether Hub."
         }
 
         if let service = payload["service"] as? String,
@@ -335,7 +335,7 @@ enum ConnectionTester {
               ["http", "https"].contains(enrollURL.scheme?.lowercased() ?? ""),
               enrollURL.path == "/api/v1/enroll"
         else {
-            return "The endpoint is not a LabTether hub."
+            return "This address is not a LabTether Hub."
         }
         return nil
     }
@@ -406,7 +406,7 @@ enum ConnectionTester {
         if let probeError = error as? HubProbeError {
             switch probeError {
             case .invalidHTTPResponse:
-                return "The endpoint returned an invalid HTTP response."
+                return "This address did not answer over HTTP."
             case .responseTooLarge:
                 return "Hub verification response is too large."
             case .invalidCustomCA:
@@ -522,7 +522,7 @@ enum ConnectionTester {
             ) {
                 return .failure(validationError)
             }
-            return .success("Verified LabTether hub")
+            return .success("This is a LabTether Hub")
         } catch {
             return .failure(probeFailureMessage(error))
         }
