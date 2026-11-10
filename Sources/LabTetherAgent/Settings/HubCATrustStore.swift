@@ -31,15 +31,17 @@ extension AgentSettings {
             .flatMap { Self.credentialScope(forHubWebSocketURL: $0) }
     }
 
-    /// The CA file a TLS check of `hubURL` uses: the one typed in Settings ›
-    /// Security, else the CA waiting for exactly that Hub, else the token Hub's CA.
+    /// The CA file a TLS check of `hubURL` uses: the CA waiting for exactly
+    /// that Hub, else the one typed in Settings › Security, else the token
+    /// Hub's CA. The waiting CA comes first because a file typed for the
+    /// token's Hub says nothing about another Hub.
     func effectiveTLSCAFile(forHubURL hubURL: String) -> String {
-        let typed = tlsCAFile.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !typed.isEmpty { return typed }
         if let scope = hubScope(of: hubURL), storedRecord(Self.pendingHubCAScopeRecord) == scope,
            FileManager.default.fileExists(atPath: pendingHubCAPath) {
             return pendingHubCAPath
         }
+        let typed = tlsCAFile.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !typed.isEmpty { return typed }
         return hasManagedHubCA ? managedHubCAPath : ""
     }
 
@@ -58,8 +60,12 @@ extension AgentSettings {
     func saveTrustedHubCA(_ offer: HubCAOffer, forHubURL hubURL: String) throws {
         let waits = trustMustWait(forHubURL: hubURL)
         try writeChildFile(Data(offer.pem.utf8), name: waits ? Self.pendingHubCAName : Self.managedHubCAName)
-        if waits { setStoredRecord(hubScope(of: hubURL) ?? "", key: Self.pendingHubCAScopeRecord) }
-        if !tlsCAFile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { tlsCAFile = "" }
+        if waits {
+            // Nothing about the token's Hub changes until the move is confirmed.
+            setStoredRecord(hubScope(of: hubURL) ?? "", key: Self.pendingHubCAScopeRecord)
+        } else if !tlsCAFile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            tlsCAFile = ""
+        }
     }
 
     /// Undoes a trust whose own verification then failed.
@@ -83,6 +89,8 @@ extension AgentSettings {
               let data = FileManager.default.contents(atPath: pendingHubCAPath) else { return }
         try writeChildFile(data, name: Self.managedHubCAName)
         discardPendingHubCA()
+        // A CA file typed in Settings belonged to the Hub that was left.
+        if !tlsCAFile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { tlsCAFile = "" }
     }
 
     private func writeChildFile(_ data: Data, name: String) throws {

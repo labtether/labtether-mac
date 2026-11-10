@@ -217,6 +217,46 @@ final class HubCATrustTests: XCTestCase {
         XCTAssertEqual(settings.storedRecord(AgentSettings.hubCARecord), "")
     }
 
+    /// A CA file typed in Settings belongs to the token's Hub. Trusting
+    /// another Hub must not clear it before the move is confirmed, and the
+    /// other Hub is checked against its own waiting CA, not against that file.
+    @MainActor
+    func testATypedCAFileStaysUntilTheMoveToAnotherHubIsConfirmed() async throws {
+        let suite = "LabTetherAgentTests.\(UUID().uuidString)"
+        let store = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("lt-trust-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer {
+            store.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: folder)
+        }
+        let settings = try enrolledSettings(store, folder)
+        let hubA = settings.hubURL
+        let typed = folder.appendingPathComponent("typed-ca.pem").path
+        settings.tlsCAFile = typed
+        let hubB = "wss://nas02.example.com:8443/ws/agent"
+        settings.hubURL = hubB
+        let trust = HubTrustFlow(
+            quickTest: { _, _, caFile in
+                caFile == settings.pendingHubCAPath ? .success(responseTimeMs: 2)
+                    : .failure(error: ConnectionTester.certificateFailureMessage)
+            },
+            check: { _, _ in .offer(HubCAOffer(pem: Self.otherCAPEM + "\n", fingerprint: "b-ca-fingerprint")) }
+        )
+        let first = await trust.test(hubURL: hubB, settings: settings)
+        XCTAssertNil(first)
+        let trusted = await trust.trust(settings: settings)
+        XCTAssertEqual(trusted, .success(responseTimeMs: 2))
+        XCTAssertEqual(settings.tlsCAFile, typed, "nothing about Hub A changes while the person decides")
+        XCTAssertEqual(settings.effectiveTLSCAFile(forHubURL: hubA), typed)
+        XCTAssertEqual(settings.effectiveTLSCAFile(forHubURL: hubB), settings.pendingHubCAPath)
+
+        settings.confirmedHubChangeScope = "wss://nas02.example.com:8443"
+        XCTAssertTrue(try settings.dropCredentialsFromOtherHub())
+        XCTAssertEqual(settings.tlsCAFile, "", "the typed file belonged to the Hub that was left")
+        XCTAssertEqual(settings.effectiveTLSCAFile, settings.managedHubCAPath)
+    }
+
     /// Showing the Hub's certificate is not proof of being the Hub: a
     /// certificate is public. An address that answers without finishing a
     /// handshake with the Hub's key is another Hub; one that does not answer

@@ -100,18 +100,18 @@ extension AgentSettings {
         let knownCA = tokenHubRecord(Self.hubCARecord, tokenScope: tokenScope)
         let knownKey = tokenHubRecord(Self.hubServerKeyRecord, tokenScope: tokenScope)
         guard knownCA != nil || knownKey != nil else { return .unknown }
-        var answered = false
-        if let knownCA, let ca = await probe.ownCA(url) {
-            answered = true
-            if ca == knownCA { rememberSameHub(scope); return .sameHub }
+        // Both questions are asked at once: an address nobody answers then
+        // costs one timeout before the warning, not two.
+        let caTask = Task { knownCA == nil ? nil : await probe.ownCA(url) }
+        let keyTask = Task { () -> HubServerKey.Proof? in
+            guard let knownKey else { return nil }
+            return await probe.holdsServerKey(url, knownKey)
         }
-        if let knownKey {
-            switch await probe.holdsServerKey(url, knownKey) {
-            case .proven: rememberSameHub(scope); return .sameHub
-            case .notProven: answered = true
-            case .unreachable: break
-            }
-        }
+        let ca = await caTask.value
+        let key = await keyTask.value
+        if let knownCA, ca == knownCA { rememberSameHub(scope); return .sameHub }
+        if key == .proven { rememberSameHub(scope); return .sameHub }
+        let answered = ca != nil || key == .notProven
         if !answered && url.hasPrefix("wss://") { return .unknown }
         return .otherHub
     }
