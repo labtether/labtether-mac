@@ -24,7 +24,11 @@ extension AgentProcess {
                 return
             }
             guard self.confirmOtherHub(verdict) else {
-                self.status.markError("Not started. The new Hub address needs a token from that Hub.")
+                // Cancel on Restart leaves the agent running on its old
+                // address, so only a cancelled Start is "not started".
+                if !self.isRunning {
+                    self.status.markError("Not started. The new Hub address needs a token from that Hub.")
+                }
                 return
             }
             self.settings.confirmedHubChangeScope = self.settings.pendingHubScope
