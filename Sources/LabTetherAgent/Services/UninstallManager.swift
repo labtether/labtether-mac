@@ -3,6 +3,11 @@ import AppKit
 /// Performs a clean uninstall: stops agent, removes the Hub SSH key it added,
 /// removes config, credentials, and history, then quits.
 enum UninstallManager {
+    /// Set once the app's folder and settings are removed. Quitting must then
+    /// write nothing: saving history on the way out put the folder and the
+    /// history files back after "Reset and uninstall".
+    @MainActor private(set) static var removedEverything = false
+
     @MainActor
     static func performUninstall(
         agentProcess: AgentProcess,
@@ -38,7 +43,8 @@ enum UninstallManager {
         if let bundleID = Bundle.main.bundleIdentifier {
             UserDefaults.standard.removePersistentDomain(forName: bundleID)
         }
-        // 7. Quit
+        // 7. Quit, leaving nothing behind
+        removedEverything = true
         NSApp.terminate(nil)
     }
 }
