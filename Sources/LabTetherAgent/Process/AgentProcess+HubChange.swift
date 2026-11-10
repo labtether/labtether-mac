@@ -65,7 +65,9 @@ extension AgentProcess {
             guard let self else { return }
             let line = await self.settings.checkSavedChosenCA()
             self.recheckingChosenCA = false
-            if let line { self.logBuffer.append("[app] \(line)") }
+            guard let line else { return }
+            let applies = line == AgentSettings.chosenCANowOnlyRoot ? " The running agent uses it from its next start." : ""
+            self.logBuffer.append("[app] \(line)\(applies)")
         }
     }
 

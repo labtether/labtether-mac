@@ -33,7 +33,7 @@ extension AgentSettings {
     static let chosenCAKeptAsBeforeNoAnswer =
         "The Hub did not answer a check of the CA certificate file. The agent uses it as before, together with the system's certificates; the check runs again at the next start."
     static let chosenCANowOnlyRoot =
-        "The CA certificate file verifies this Hub alone. From the next start the agent trusts only that file for the Hub."
+        "The CA certificate file verifies this Hub alone. The agent trusts only that file for this Hub from now on."
 
     typealias ChosenCACheck = (_ hubURL: String, _ caFile: String) async -> HubCATrust.OwnCAVerdict
 
