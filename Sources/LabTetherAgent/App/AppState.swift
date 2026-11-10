@@ -177,7 +177,12 @@ final class AppState: ObservableObject {
             }
         }
 
-        // Trigger onboarding if not configured and hasn't been completed
+        // Trigger onboarding if not configured and hasn't been completed, and
+        // also when the only token on this Mac is a file that was not made for
+        // this Hub: it is never sent, so setup asks for one.
+        if !settings.isConfigured && settings.enrollmentTokenFile == .untied {
+            settings.hasCompletedOnboarding = false
+        }
         if !settings.isConfigured && !settings.hasCompletedOnboarding {
             shouldShowOnboarding = true
         }
