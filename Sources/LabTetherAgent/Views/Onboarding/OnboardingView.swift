@@ -111,7 +111,10 @@ struct OnboardingView: View {
 
             VStack(alignment: .leading, spacing: 0) {
                 form
-                LTDisclosureRow(title: L10n.onboardingAdvanced, detail: "Asset ID, group ID", isExpanded: $showAdvanced)
+                // Not animated: the window follows its content only for plain
+                // changes, and an animated one left Connect below the bottom edge.
+                LTDisclosureRow(title: L10n.onboardingAdvanced, detail: "Asset ID, group ID",
+                                isExpanded: $showAdvanced, animated: false)
                     .padding(.top, LT.space12)
                 if showAdvanced {
                     advancedFields

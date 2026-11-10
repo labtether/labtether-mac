@@ -16,7 +16,7 @@ struct DiagnosticsLogSummary: Equatable {
     var reportLines: [String] {
         [
             "Buffered Logs: \(totalCount) total (\(errorCount) error, \(warningCount) warning, \(infoCount) info)",
-            "Recent raw log lines are omitted from clipboard diagnostics for redaction safety. Use the Agent Logs window for full local details."
+            "Recent raw log lines are omitted from clipboard diagnostics for redaction safety. Open View logs for the full lines."
         ]
     }
 }
