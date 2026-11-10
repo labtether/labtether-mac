@@ -93,6 +93,7 @@ extension AgentSettings {
     /// The new address is compared only with what was recorded for the
     /// token's own Hub when the token connected there (its CA and its server
     /// key). A CA trusted later for the new address proves nothing here.
+    @MainActor
     func checkHubChange(probe: HubIdentityProbe = .live) async -> HubChangeVerdict {
         guard let tokenScope = savedTokenScope, let scope = pendingHubScope,
               let url = normalizedHubWebSocketURL(), scope != tokenScope else { return .unchanged }

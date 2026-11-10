@@ -101,13 +101,17 @@ final class AgentSettingsNormalizationTests: XCTestCase {
         try FileManager.default.setAttributes(
             [.posixPermissions: 0o600], ofItemAtPath: settings.enrollmentTokenFilePath
         )
+        // An installer's token file is used only with its tie to the Hub in use.
+        settings.hubURL = "wss://nas01.example.com:8443/ws/agent"
+        try Data(#"{"hub_url":"wss://nas01.example.com:8443"}"#.utf8).write(
+            to: support.appendingPathComponent(AgentSettings.enrollmentTokenTieName))
 
         let pending = try settings.buildEnvironment()
         XCTAssertEqual(pending["AGENT_GROUP_ID"], "qa")
         XCTAssertEqual(pending["LABTETHER_WEBRTC_ENABLED"], "false")
         XCTAssertFalse(settings.validationErrors().contains { $0.contains("Capture FPS") })
         XCTAssertEqual(pending["LABTETHER_TLS_CA_FILE"], "/qa/hub-ca.pem")
-        XCTAssertEqual(pending["LABTETHER_TLS_CA_ONLY"], "true", "a chosen CA file is the agent's only root")
+        XCTAssertNil(pending["LABTETHER_TLS_CA_ONLY"], "a chosen CA file is the only root only once it verified the Hub alone")
         XCTAssertNil(pending["LABTETHER_TLS_SKIP_VERIFY"])
         XCTAssertEqual(pending["LABTETHER_ENROLLMENT_TOKEN_FILE"], settings.enrollmentTokenFilePath)
 

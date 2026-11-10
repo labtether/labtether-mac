@@ -34,6 +34,11 @@ final class AgentProcess: ObservableObject {
     /// Words for the line the agent printed when it refused to start, if it did.
     private var startRefusal: String?
     var checkingHubChange = false
+    var checkingChosenCA = false
+    /// The saved CA file was checked for the start now under way.
+    var chosenCACheckedForThisStart = false
+    /// The check after a connection; kept apart so it never holds up a start.
+    var recheckingChosenCA = false
     let crashCoordinator = CrashRestartCoordinator()
 
     private var settingsObserver: AnyCancellable?
@@ -102,6 +107,8 @@ final class AgentProcess: ObservableObject {
         debugBootProcess("start called resetCrashHistory=\(resetCrashHistory) process_nil=\(process == nil) isStarting=\(isStarting)")
         guard process == nil && !isStarting else { return }
         guard hubChangeSettled(then: { [weak self] in self?.start(resetCrashHistory: resetCrashHistory) }) else { return }
+        guard chosenCASettled(then: { [weak self] in self?.start(resetCrashHistory: resetCrashHistory) }) else { return }
+        chosenCACheckedForThisStart = false   // every start checks again
         cancelCrashRestart()
 
         if resetCrashHistory {
@@ -130,6 +137,13 @@ final class AgentProcess: ObservableObject {
         // Validate config before launching
         guard settings.isConfigured else {
             debugBootProcess("start aborted: settings.isConfigured=false")
+            if !droppedOtherHubCredentials, settings.enrollmentTokenFile == .untied {
+                // A token file that is not for this Hub is never sent. Setup asks for one.
+                status.markError(AgentSettings.untiedEnrollmentTokenMessage)
+                logBuffer.append("[app] The enrollment token file was not made for this Hub and was not sent.")
+                NotificationCenter.default.post(name: .labTetherNeedsHubToken, object: nil)
+                return
+            }
             status.markError(droppedOtherHubCredentials
                 ? "The Hub changed. Add an enrollment token from the new Hub in Settings."
                 : "Add the Hub address and a token in Settings.")

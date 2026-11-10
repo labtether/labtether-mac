@@ -163,6 +163,35 @@ enum HubCATrust {
         return evaluate(chain: chain, host: host, savedAnchors: saved, fetchedCA: fetched)
     }
 
+    enum OwnCAVerdict: Equatable {
+        /// A handshake with only this file's certificates as roots finished.
+        case verified(fingerprint: String)
+        /// The Hub answered, but its certificate does not chain to this file.
+        case mismatch
+        /// The file holds no certificate.
+        case unreadable
+        /// Nothing answered with a certificate.
+        case unreachable
+    }
+
+    /// Whether the CA in `caFile`, alone, verifies the Hub at `hubURL`. The
+    /// request is the public identity route and carries nothing.
+    static func verifiesAlone(hubURL: String, caFile: String) async -> OwnCAVerdict {
+        guard let anchors = try? ConnectionTester.trustedCertificates(for: caFile), let first = anchors.first else {
+            return .unreadable
+        }
+        guard let url = ConnectionTester.hubIdentityURL(from: hubURL), url.scheme == "https" else { return .unreachable }
+        let capture = ChainCapture(completeHandshake: true, onlyAnchors: anchors)
+        let session = bareSession(capture)
+        defer { session.invalidateAndCancel() }
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 6)
+        request.httpShouldHandleCookies = false
+        if let (_, response) = try? await session.data(for: request), response is HTTPURLResponse {
+            return .verified(fingerprint: fingerprint(of: first))
+        }
+        return capture.chain.isEmpty ? .unreachable : .mismatch
+    }
+
     /// The fingerprint of the Hub's own CA at `hubURL`, proven: the address
     /// completed a TLS handshake that validates against that CA alone (so it
     /// holds a certificate from that CA for its host name, and its key). With

@@ -37,6 +37,40 @@ extension AgentProcess {
         return false
     }
 
+    /// A saved CA file that has never verified this Hub alone is checked once
+    /// per start. When it passes it is the agent's only root from this start
+    /// on; when it does not, or the Hub does not answer, the agent starts
+    /// with it as before and one line says so.
+    func chosenCASettled(then retry: @escaping @MainActor () -> Void) -> Bool {
+        guard settings.chosenCANeedsCheck, !chosenCACheckedForThisStart else { return true }
+        guard !checkingChosenCA else { return false }
+        checkingChosenCA = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let line = await self.settings.checkSavedChosenCA()
+            self.checkingChosenCA = false
+            self.chosenCACheckedForThisStart = true
+            if let line { self.logBuffer.append("[app] \(line)") }
+            retry()
+        }
+        return false
+    }
+
+    /// The same check after each connection: a Hub that was away at start is
+    /// there now. A file that passes is the only root from the next start.
+    func recheckChosenCAAfterConnect() {
+        guard settings.chosenCANeedsCheck, !recheckingChosenCA else { return }
+        recheckingChosenCA = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let line = await self.settings.checkSavedChosenCA()
+            self.recheckingChosenCA = false
+            guard let line else { return }
+            let applies = line == AgentSettings.chosenCANowOnlyRoot ? " The running agent uses it from its next start." : ""
+            self.logBuffer.append("[app] \(line)\(applies)")
+        }
+    }
+
     private func confirmOtherHub(_ verdict: HubChangeVerdict) -> Bool {
         let alert = NSAlert()
         alert.alertStyle = .warning

@@ -169,7 +169,7 @@ final class AppStateLocation {
 
     func validateRuntimeFiles() throws {
         try validate()
-        for name in ["agent-token", "enrollment-token", "webrtc-turn-pass", "local-api-auth-token",
+        for name in ["agent-token", "enrollment-token", "enrollment-token.hub", "webrtc-turn-pass", "local-api-auth-token",
                      "agent-config.json", "device-key", "device-key.pub", "device-fingerprint",
                      "session-history.json", "bandwidth-history.json"] {
             var info = stat()
