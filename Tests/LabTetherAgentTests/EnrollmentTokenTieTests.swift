@@ -96,15 +96,33 @@ final class EnrollmentTokenTieTests: XCTestCase {
         try installToken(settings, tie: #"{"hub_url":"wss://nas01.example.com:8443","ca_fingerprint_sha256":"\#(HubCATrustTests.caFingerprint)"}"#)
         XCTAssertEqual(settings.hubCAPin, .file(caPath))
         XCTAssertEqual(settings.enrollmentTokenFile, .tied)
-        let environment = try settings.buildEnvironment()
+        let environment = try settings.buildEnvironment()   // the first start
         XCTAssertEqual(environment["LABTETHER_ENROLLMENT_TOKEN_FILE"], settings.enrollmentTokenFilePath)
         XCTAssertEqual(environment["LABTETHER_TLS_CA_ONLY"], "true")
 
-        // Another CA file in Settings: the token is held back.
+        // The agent enrolls and removes the token file with its tie. The next
+        // start must still trust only that file, never the system's roots too.
+        try FileManager.default.removeItem(atPath: settings.enrollmentTokenFilePath)
+        try FileManager.default.removeItem(at: settings.appSupportDirectory.appendingPathComponent(AgentSettings.enrollmentTokenTieName))
+        XCTAssertEqual(settings.enrollmentTokenFile, .none)
+        XCTAssertEqual(settings.hubCAPin, .file(caPath))
+        XCTAssertFalse(settings.chosenCANeedsCheck)
+        XCTAssertEqual(try settings.buildEnvironment()["LABTETHER_TLS_CA_ONLY"], "true")
+    }
+
+    /// A tie that names another CA than the chosen file: the token is held back.
+    func testATieNamingAnotherCAHoldsTheTokenBack() throws {
+        let (settings, folder, cleanup) = try makeSettings()
+        defer { cleanup() }
+        settings.hubURL = hubA
+        let caPath = folder.appendingPathComponent("hub-ca.pem").path
         try Data(HubCATrustTests.otherCAPEM.utf8).write(to: URL(fileURLWithPath: caPath))
+        settings.tlsCAFile = caPath
+        try installToken(settings, tie: #"{"hub_url":"wss://nas01.example.com:8443","ca_fingerprint_sha256":"\#(HubCATrustTests.caFingerprint)"}"#)
         XCTAssertEqual(settings.hubCAPin, .alongside(caPath))
         XCTAssertEqual(settings.enrollmentTokenFile, .untied)
         XCTAssertNil(try settings.buildEnvironment()["LABTETHER_ENROLLMENT_TOKEN_FILE"])
+        XCTAssertTrue(settings.chosenCANeedsCheck, "nothing was recorded for the other CA")
     }
 
     /// The address is changed before this Mac ever enrolled, and the person

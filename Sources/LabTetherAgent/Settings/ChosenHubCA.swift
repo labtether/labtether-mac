@@ -70,6 +70,17 @@ extension AgentSettings {
         objectWillChange.send()
     }
 
+    /// The token file's tie names the chosen file's CA for the Hub in use:
+    /// recorded as verified for that Hub, so the file stays the only root
+    /// once the agent has used the token and removed it with its tie.
+    func adoptEnrollmentTokenTieCA() {
+        let chosen = tlsCAFile.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !chosen.isEmpty, chosenCAVerifiedFingerprint(forHubURL: hubURL) == nil,
+              let scope = chosenCAScope(of: hubURL), let fingerprint = Self.firstFingerprint(inPEMFile: chosen),
+              enrollmentTokenTieCA(forHubURL: hubURL) == fingerprint else { return }
+        recordChosenCAVerified(scope: scope, fingerprint: fingerprint)
+    }
+
     /// The setting is cleared or replaced by a trusted CA: nothing is known
     /// about a chosen file any more.
     func forgetChosenCA() {

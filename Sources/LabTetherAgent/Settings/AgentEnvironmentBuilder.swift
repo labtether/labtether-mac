@@ -31,6 +31,8 @@ enum AgentEnvironmentBuilder {
             // made for. Otherwise it stays where it is, unsent.
             if settings.enrollmentTokenFile == .tied {
                 env["LABTETHER_ENROLLMENT_TOKEN_FILE"] = settings.enrollmentTokenFilePath
+                // A CA the tie names stays the only root after the token is used up.
+                settings.adoptEnrollmentTokenTieCA()
             }
         case .remove:
             try settings.removeRuntimeSecretIfNeeded(
