@@ -288,6 +288,8 @@ enum ConnectionTester {
         case invalidHTTPResponse
         case responseTooLarge
         case invalidCustomCA
+        /// The chain did not validate against the configured CA.
+        case certificateNotTrusted
     }
 
     /// Validates the bounded response returned by the public discovery
@@ -360,7 +362,16 @@ enum ConnectionTester {
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
-        let (bytes, response) = try await session.bytes(for: request)
+        let bytes: URLSession.AsyncBytes
+        let response: URLResponse
+        do {
+            (bytes, response) = try await session.bytes(for: request)
+        } catch {
+            // Refusing the chain against a saved CA cancels the request; it
+            // is still a certificate failure, and setup then asks about it.
+            if delegate.refusedCertificate { throw HubProbeError.certificateNotTrusted }
+            throw error
+        }
         guard let http = response as? HTTPURLResponse else {
             throw HubProbeError.invalidHTTPResponse
         }
@@ -396,6 +407,8 @@ enum ConnectionTester {
                 return "Hub verification response is too large."
             case .invalidCustomCA:
                 return "The configured CA certificate could not be loaded."
+            case .certificateNotTrusted:
+                return certificateFailureMessage
             }
         }
 
@@ -519,6 +532,10 @@ enum ConnectionTester {
 private final class HubProbeSessionDelegate: NSObject, URLSessionDelegate, URLSessionTaskDelegate {
     private let tlsSkipVerify: Bool
     private let trustedCertificates: [SecCertificate]
+    private let lock = NSLock()
+    private var refused = false
+    /// True once a chain failed against the configured CA.
+    var refusedCertificate: Bool { lock.lock(); defer { lock.unlock() }; return refused }
 
     init(tlsSkipVerify: Bool, trustedCertificates: [SecCertificate]) {
         self.tlsSkipVerify = tlsSkipVerify
@@ -565,6 +582,7 @@ private final class HubProbeSessionDelegate: NSObject, URLSessionDelegate, URLSe
             SecTrustSetAnchorCertificates(serverTrust, trustedCertificates as CFArray)
             SecTrustSetAnchorCertificatesOnly(serverTrust, false)
             guard SecTrustEvaluateWithError(serverTrust, nil) else {
+                lock.lock(); refused = true; lock.unlock()
                 completionHandler(.cancelAuthenticationChallenge, nil)
                 return
             }
