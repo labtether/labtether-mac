@@ -20,6 +20,36 @@ final class LocalAPIClientTests: XCTestCase {
         XCTAssertEqual(client.metadata.snapshot.localBindAddress, "127.0.0.1:8091")
     }
 
+    /// After Start the agent needs a moment to open its local API. A refused
+    /// first poll must be asked again within a second, menu open or not:
+    /// waiting the hidden 30 s left "Status unavailable" up after every
+    /// Start and Restart.
+    func testARefusedFirstPollAfterStartIsAskedAgainWithinASecond() {
+        let client = LocalAPIClient()
+        client.beginStartup()
+        client.applyPollFailure()
+        XCTAssertEqual(client.nextPollInterval, 1)
+        client.applyPollFailure()
+        XCTAssertEqual(client.nextPollInterval, 1, "refusals while the agent starts do not back off")
+
+        client.applySuccessfulPollResult(makeStatus(connectionState: "connected", connected: true))
+        XCTAssertEqual(client.nextPollInterval, 30, "answered and nothing on screen: the slow rate")
+        client.setMenuVisible(true)
+        XCTAssertEqual(client.nextPollInterval, 5)
+        client.applyPollFailure()
+        client.applyPollFailure()
+        XCTAssertEqual(client.nextPollInterval, 10, "later failures back off as before")
+    }
+
+    /// Stopping the agent does not close the menu. The client must still
+    /// know the menu is open, or it polls at the hidden rate under it.
+    func testStopKeepsWhatIsOnScreen() {
+        let client = LocalAPIClient()
+        client.setMenuVisible(true)
+        client.stop()
+        XCTAssertTrue(client.isMenuVisible)
+    }
+
     func testStopClearsKnownAlertIDs() {
         let client = LocalAPIClient()
 
