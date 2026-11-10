@@ -6,6 +6,9 @@ struct SettingsConnectionTab: View {
     @ObservedObject var agentProcess: AgentProcess
     @ObservedObject var status: AgentStatus
     @ObservedObject var runtime: LocalAPIRuntimeStore
+    /// Scrolls the view with this id into sight (the trust question must
+    /// never sit below the window's edge with its buttons cut off).
+    var reveal: (String) -> Void = { _ in }
     @State private var connectionTestResult: ConnectionTestResult?
     @State private var isTestingConnection = false
     @State private var showDiagnosticsSheet = false
@@ -63,6 +66,8 @@ struct SettingsConnectionTab: View {
                         onCancel: { trust.cancel() }
                     )
                     .padding(.vertical, LT.space6)
+                    .id(Self.trustPanelID)
+                    .onAppear { DispatchQueue.main.async { reveal(Self.trustPanelID) } }
                 }
 
                 SettingsSecretRow(
@@ -111,6 +116,8 @@ struct SettingsConnectionTab: View {
             )
         }
     }
+
+    private static let trustPanelID = "hub-trust-panel"
 
     private var testRow: some View {
         HStack(spacing: 10) {

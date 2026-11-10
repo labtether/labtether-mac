@@ -23,19 +23,24 @@ struct SettingsView: View {
             .padding(.top, 2)
             .padding(.bottom, LT.space20)
 
-            ScrollView {
-                Group {
-                    switch selectedTab {
-                    case 0:
-                        SettingsConnectionTab(settings: settings, agentProcess: agentProcess, status: status, runtime: runtime)
-                    case 1:
-                        SettingsSecurityTab(settings: settings)
-                    default:
-                        SettingsAdvancedTab(settings: settings, status: status, metadata: metadata)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    Group {
+                        switch selectedTab {
+                        case 0:
+                            SettingsConnectionTab(
+                                settings: settings, agentProcess: agentProcess, status: status, runtime: runtime,
+                                reveal: { id in withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(id, anchor: .bottom) } }
+                            )
+                        case 1:
+                            SettingsSecurityTab(settings: settings)
+                        default:
+                            SettingsAdvancedTab(settings: settings, status: status, metadata: metadata)
+                        }
                     }
+                    .padding(.horizontal, LT.space20)
+                    .padding(.bottom, LT.space20)
                 }
-                .padding(.horizontal, LT.space20)
-                .padding(.bottom, LT.space20)
             }
         }
         .padding(.top, LT.space8)
