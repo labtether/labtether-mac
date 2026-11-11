@@ -8,7 +8,7 @@ enum ConnectionState: String {
     case connected = "Connected"
     case reconnecting = "Reconnecting"
     case enrolling = "Enrolling"
-    case authFailed = "Auth Failed"
+    case authFailed = "Token refused"
     case error = "Error"
 
     var sfSymbol: String {

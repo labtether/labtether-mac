@@ -25,7 +25,7 @@ tells you whether it is connected.
   alert fires.
 - **Update notice.** The menu shows when a newer signed release is out. The app
   checks once a day and never downloads anything itself. Turn it off in
-  Settings > Advanced.
+  Settings › Advanced.
 
 ## Install
 
@@ -41,7 +41,7 @@ notarized by Apple. To check the download yourself first, see
 
 ## Uninstall
 
-1. In the menu, choose **Reset & Uninstall...**. It stops the agent, removes
+1. In the menu, choose **⋯ › Reset and uninstall…**. It stops the agent, removes
    the hub's SSH key line the agent added to `~/.ssh/authorized_keys`, deletes
    settings, credentials and history, and quits.
 2. Delete **LabTether Agent.app** from Applications.
@@ -49,13 +49,13 @@ notarized by Apple. To check the download yourself first, see
 
 ## Troubleshooting
 
-- **No menu bar icon.** In System Settings > General > Login Items, allow
+- **No menu bar icon.** In System Settings › General › Login Items, allow
   LabTether Agent.
 - **Can't connect.** Check that the hub URL opens from this Mac and that the
   enrollment token is still valid.
-- **Changed the hub URL.** A token works only with the hub that issued it. The
-  app removes the old hub's token on the next start and asks for an enrollment
-  token from the new hub.
+- **Changed the hub URL.** The same hub at a new address keeps this Mac's
+  token. For a different hub, Restart warns first; Continue removes the old
+  hub's token and asks for an enrollment token from the new hub.
 - **High CPU.** Open Console.app, filter for LabTether Agent and
   [open an issue](https://github.com/labtether/labtether-mac/issues) with what
   you see.

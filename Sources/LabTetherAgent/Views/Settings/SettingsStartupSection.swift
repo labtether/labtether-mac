@@ -32,8 +32,8 @@ struct SettingsStartupSection: View {
                     settings.startAtLogin = LoginItemManager.isEnabled
                     status.markError(
                         newValue
-                            ? "Start at login was not turned on. Allow LabTether in System Settings > General > Login Items."
-                            : "Start at login could not be turned off. See System Settings > General > Login Items."
+                            ? "Start at login was not turned on. Allow LabTether in System Settings › General › Login Items."
+                            : "Start at login could not be turned off. See System Settings › General › Login Items."
                     )
                 }
             }

@@ -35,10 +35,10 @@ enum AgentNotification {
         case .disconnected:             return "The agent process stopped."
         case .enrolled:                 return "This Mac is enrolled with the Hub."
         case .connectionLost:           return "Reconnecting."
-        case .screenSharingDisabled:    return "Remote View needs Screen Sharing. Turn it on in System Settings > General > Sharing."
+        case .screenSharingDisabled:    return "Remote View needs Screen Sharing. Turn it on in System Settings › General › Sharing."
         case .screenSharingObserveOnly: return "Remote mouse and keyboard input is off."
         case .crashRestart(let n):      return "The agent quit unexpectedly. Restart \(n) is starting."
-        case .crashLoopDetected:        return "The agent quit several times in a row, so it was not restarted."
+        case .crashLoopDetected:        return "The agent quit several times in a row. LabTether tries again in 5 minutes."
         case .alertFiring(_, let severity): return "\(Self.severityWord(severity)) alert"
         case .alertResolved(let title): return title
         }

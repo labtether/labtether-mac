@@ -23,12 +23,12 @@ enum AgentSettingsValidator {
         if AgentSettingsNormalization.strictDecimalInteger(trimmedPort, in: 1...65535) != nil {
             // valid
         } else {
-            errors.append("Agent Port must be a number between 1 and 65535.")
+            errors.append("Agent port must be a number from 1 to 65535.")
         }
 
         let dockerMode = settings.normalizedDockerMode()
         if !AgentSettings.allowedDockerModes.contains(dockerMode) {
-            errors.append("Docker mode must be one of auto, true, or false.")
+            errors.append("Docker must be Auto, On or Off.")
         }
 
         if dockerMode != "false" {
@@ -45,12 +45,12 @@ enum AgentSettingsValidator {
 
         let filesMode = settings.normalizedFilesRootMode()
         if !AgentSettings.allowedFileRootModes.contains(filesMode) {
-            errors.append("Files Root Mode must be either home or full.")
+            errors.append("File access must be Home folder or Whole disk.")
         }
 
         let normalizedLevel = settings.normalizedLogLevel()
         if !AgentSettings.allowedLogLevels.contains(normalizedLevel) {
-            errors.append("Log level must be one of debug, info, warn, or error.")
+            errors.append("Log level must be Debug, Info, Warn or Error.")
         }
 
         if settings.effectiveWebRTCEnabled {
