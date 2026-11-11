@@ -1,8 +1,9 @@
 name: CI
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
+  # No run on main after a merge: main requires an up-to-date branch, so the
+  # pull request run already tested the merged code. Before a release, run
+  # this workflow by hand on main; that run does every check.
   pull_request:
 
 permissions:
@@ -84,7 +85,9 @@ jobs:
 
   mac-installed-app:
     name: Contract / Installed macOS application bundle
-    needs: [qa-select, build-and-test]
+    # Runs beside build-and-test, not after it: it builds its own bundle
+    # and uses nothing from that job.
+    needs: [qa-select]
     if: needs.qa-select.outputs.native_build != 'false' && needs.qa-select.outputs.mac_installed_app == 'true'
     runs-on: macos-26
     timeout-minutes: 30
