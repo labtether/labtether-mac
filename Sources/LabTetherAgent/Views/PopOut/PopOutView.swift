@@ -4,7 +4,7 @@ import SwiftUI
 // MARK: - PopOutView
 
 /// The floating panel: a canvas with sheets, problems first. Alerts, usage and
-/// recent events come first; bandwidth, sessions and Remote View follow.
+/// recent events come first; bandwidth and Remote View follow.
 struct PopOutView: View {
     let status: AgentStatus
     let agentProcess: AgentProcess
@@ -43,9 +43,6 @@ struct PopOutView: View {
                         .padding(.top, LT.space24)
 
                     PopOutBandwidthSection(tracker: bandwidthTracker)
-                        .padding(.top, LT.space24)
-
-                    PopOutSessionHistorySection(tracker: sessionHistory)
                         .padding(.top, LT.space24)
 
                     PopOutScreenSharingSection(screenSharing: screenSharing, settings: settings)

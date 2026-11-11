@@ -20,8 +20,10 @@ core is `labtether-agent v2.0.0`.
   critical alert or a refused token. Starting, offline and stopped dim it.
 - The menu bar window shows status, usage once, alerts, actions and one
   footer line with the version and "Update available".
-- The pop-out lists alerts first, then usage, recent events, bandwidth,
-  sessions and Remote View. Agent controls are in its ⋯ menu.
+- The pop-out lists alerts first, then usage, recent events, bandwidth and
+  Remote View. Agent controls are in its ⋯ menu. The Sessions list is gone:
+  the agent never reports terminal, Remote View or file sessions in a form the
+  app can read, so it could only stay empty or list errors as sessions.
 - Setup is one window: Hub address, token, test and Connect. Asset ID and
   group ID are under Advanced.
 - Settings opens on the agent's status, then the Hub form. Asset ID and group
