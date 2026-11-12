@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/). The older
 `2026.1` entry predates the switch from calendar versions.
 
+## [2.0.1]
+
+No change to the app since 2.0.0. It is released again so that every part of
+LabTether 2.0.1 carries the same version. The bundled agent core is
+`labtether-agent v2.0.1`, which is the same code as v2.0.0.
+
 ## [2.0.0] - unreleased
 
 The version moves to 2.0.0 with the LabTether 2.0 release. The bundled agent
