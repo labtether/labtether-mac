@@ -15,12 +15,12 @@ APP_PATH=""
 REQUIRE_NOTARIZED=false
 WORK_DIR=""
 MOUNT_POINT=""
-MOUNTED=false
+ATTACHED_DEVICE=""
 
 cleanup() {
-  if [[ "${MOUNTED}" == "true" ]]; then
-    hdiutil detach -quiet "${MOUNT_POINT}" >/dev/null 2>&1 \
-      || hdiutil detach -quiet -force "${MOUNT_POINT}" >/dev/null 2>&1 || true
+  if [[ -n "${ATTACHED_DEVICE}" ]]; then
+    hdiutil detach -quiet "${ATTACHED_DEVICE}" >/dev/null 2>&1 \
+      || hdiutil detach -quiet -force "${ATTACHED_DEVICE}" >/dev/null 2>&1 || true
   fi
   if [[ -n "${WORK_DIR}" && -d "${WORK_DIR}" && ! -L "${WORK_DIR}" ]]; then
     rm -rf -- "${WORK_DIR}"
@@ -77,12 +77,15 @@ chmod 700 "${WORK_DIR}"
 ATTACH_PLIST="${WORK_DIR}/attach.plist"
 hdiutil attach -plist -readonly -nobrowse -noautoopen "${DMG}" >"${ATTACH_PLIST}" 2>/dev/null \
   || fail "disk image could not be mounted read-only"
+# The first entry is the whole attached disk; ejecting it on exit also covers
+# an image that attached without a mount point.
+ATTACHED_DEVICE="$(plutil -extract system-entities.0.dev-entry raw -o - "${ATTACH_PLIST}" 2>/dev/null || true)"
+[[ "${ATTACHED_DEVICE}" == /dev/disk* ]] || { ATTACHED_DEVICE=""; fail "the attached disk image reported no device"; }
 for entity_index in 0 1 2 3 4 5 6 7; do
   MOUNT_POINT="$(plutil -extract "system-entities.${entity_index}.mount-point" raw -o - "${ATTACH_PLIST}" 2>/dev/null || true)"
   [[ -z "${MOUNT_POINT}" ]] || break
 done
 [[ -n "${MOUNT_POINT}" && -d "${MOUNT_POINT}" ]] || fail "the mounted disk image has no mount point"
-MOUNTED=true
 
 # macOS adds its own bookkeeping folder to an image built from a folder.
 # Anything else beside the app and the shortcut is refused.
@@ -104,10 +107,10 @@ diff -r "${APP_PATH}" "${MOUNTED_APP}" >/dev/null 2>&1 \
   || fail "the app in the disk image differs from the verified app"
 
 if [[ "${REQUIRE_NOTARIZED}" == "true" ]]; then
-  APP_SIGNATURE_DETAILS="$(codesign -dvvv "${APP_PATH}" 2>&1)" \
-    || fail "app signature metadata could not be read"
   DMG_SIGNATURE_DETAILS="$(codesign -dvvv "${DMG}" 2>&1)" \
     || fail "disk image signature metadata could not be read"
+  APP_SIGNATURE_DETAILS="$(codesign -dvvv "${APP_PATH}" 2>&1)" \
+    || fail "app signature metadata could not be read"
   printf '%s\n' "${DMG_SIGNATURE_DETAILS}" | grep -q '^Authority=Developer ID Application:' \
     || fail "disk image is not Developer ID Application signed"
   printf '%s\n' "${DMG_SIGNATURE_DETAILS}" | grep -q '^Timestamp=' \
@@ -119,6 +122,9 @@ if [[ "${REQUIRE_NOTARIZED}" == "true" ]]; then
   unset APP_SIGNATURE_DETAILS DMG_SIGNATURE_DETAILS APP_TEAM_ID DMG_TEAM_ID
   codesign --verify --strict --verbose=2 "${DMG}" >/dev/null 2>&1 \
     || fail "disk image signature did not pass strict verification"
+  # Byte-equal files can still differ in mode bits or attributes.
+  codesign --verify --deep --strict "${MOUNTED_APP}" >/dev/null 2>&1 \
+    || fail "the app in the disk image did not pass strict signature verification"
   xcrun stapler validate "${DMG}" >/dev/null 2>&1 \
     || fail "stapled notarization ticket is missing or invalid on the disk image"
   spctl --assess --type open --context context:primary-signature --verbose=4 "${DMG}" >/dev/null 2>&1 \

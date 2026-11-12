@@ -27,9 +27,16 @@ fi
 (cd "${WORK_DIR}/out" && shasum -a 256 "${DMG_NAME}" >"${DMG_NAME}.sha256")
 "${SCRIPT_DIR}/verify-release-dmg.sh" --dmg "${dmg}" --checksum "${dmg}.sha256" --app "${app}" >/dev/null \
   || fail "the disk image check refused a matching image"
-if "${SCRIPT_DIR}/verify-release-dmg.sh" --dmg "${dmg}" --checksum "${dmg}.sha256" --app "${app}" \
-  --require-notarized >/dev/null 2>&1; then
+# The refusal must come from the image's own signature check, not from an
+# earlier step, so the message is checked too.
+if notarized_output="$("${SCRIPT_DIR}/verify-release-dmg.sh" --dmg "${dmg}" --checksum "${dmg}.sha256" \
+  --app "${app}" --require-notarized 2>&1)"; then
   fail "the disk image check accepted an unsigned image as notarized"
+fi
+[[ "${notarized_output}" == *"disk image signature metadata could not be read"* ]] \
+  || fail "the unsigned image was refused before its own signature check"
+if hdiutil info | grep -Fq "${dmg}"; then
+  fail "the disk image check left the image attached"
 fi
 
 printf 'changed host\n' >"${app}/Contents/MacOS/LabTetherAgent"
