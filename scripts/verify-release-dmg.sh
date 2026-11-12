@@ -71,10 +71,17 @@ hdiutil verify -quiet "${DMG}" >/dev/null 2>&1 || fail "disk image did not pass 
 TEMP_BASE="$(cd "${TMPDIR:-/tmp}" && pwd -P)" || fail "temporary directory is unavailable"
 WORK_DIR="$(mktemp -d "${TEMP_BASE%/}/labtether-dmg-verify.XXXXXX")"
 chmod 700 "${WORK_DIR}"
-MOUNT_POINT="${WORK_DIR}/mount"
-mkdir "${MOUNT_POINT}"
-hdiutil attach -quiet -readonly -nobrowse -noautoopen -mountpoint "${MOUNT_POINT}" "${DMG}" >/dev/null 2>&1 \
+# macOS picks the mount point (under /Volumes, hidden from Finder). A mount
+# point of our own fails when the temporary directory is on a volume that
+# ignores ownership, such as an external drive.
+ATTACH_PLIST="${WORK_DIR}/attach.plist"
+hdiutil attach -plist -readonly -nobrowse -noautoopen "${DMG}" >"${ATTACH_PLIST}" 2>/dev/null \
   || fail "disk image could not be mounted read-only"
+for entity_index in 0 1 2 3 4 5 6 7; do
+  MOUNT_POINT="$(plutil -extract "system-entities.${entity_index}.mount-point" raw -o - "${ATTACH_PLIST}" 2>/dev/null || true)"
+  [[ -z "${MOUNT_POINT}" ]] || break
+done
+[[ -n "${MOUNT_POINT}" && -d "${MOUNT_POINT}" ]] || fail "the mounted disk image has no mount point"
 MOUNTED=true
 
 # macOS adds its own bookkeeping folder to an image built from a folder.
