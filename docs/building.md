@@ -17,6 +17,12 @@ The result is `build/LabTether Agent.app`. The builder fails if the Go child,
 Swift host, resource bundle, icon, expected architecture, or signature is
 missing. Use `LABTETHER_AGENT_REPO` when the agent checkout is elsewhere.
 
+To put that app in a disk image with an Applications shortcut:
+
+```bash
+./scripts/build-dmg.sh --app "build/LabTether Agent.app" --output build/labtether-agent-macos-universal.dmg
+```
+
 Maintainers should follow the [local-only signing, notarization, and publication
 runbook](releasing.md). Hosted CI verifies source tags but never receives
 signing or notarization credentials and never publishes release bytes.

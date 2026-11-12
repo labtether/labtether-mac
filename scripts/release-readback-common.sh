@@ -33,27 +33,44 @@ github_release_by_tag() {
   jq -c '.[0]' <<<"${matches}"
 }
 
+# Prints the JSON list of {name, size, digest} that GitHub must report for
+# the given local release files.
+release_asset_expectations() {
+  local path
+  local size
+  local hash
+  local entries='[]'
+  for path in "$@"; do
+    size="$(stat -f '%z' -- "${path}")" || return 1
+    hash="$(shasum -a 256 -- "${path}" | awk '{ print tolower($1) }')" || return 1
+    [[ "${hash}" =~ ^[0-9a-f]{64}$ ]] || return 1
+    entries="$(jq -c \
+      --arg name "$(basename "${path}")" \
+      --argjson size "${size}" \
+      --arg digest "sha256:${hash}" \
+      '. + [{name: $name, size: $size, digest: $digest}]' <<<"${entries}")" || return 1
+  done
+  printf '%s\n' "${entries}"
+}
+
+# True when the release is in the expected draft state and holds exactly the
+# expected assets, each uploaded with the expected size and SHA-256 digest.
 validate_github_release_asset_readback() {
   local release_json="$1"
   local expected_draft="$2"
-  local archive_hash="$3"
-  local checksum_hash="$4"
-  local archive_size="$5"
-  local checksum_size="$6"
+  local expected_assets="$3"
   jq -e \
     --arg tag "${TAG}" \
-    --arg archive "${ARCHIVE_NAME}" \
-    --arg checksum "${CHECKSUM_NAME}" \
-    --arg archive_digest "sha256:${archive_hash}" \
-    --arg checksum_digest "sha256:${checksum_hash}" \
     --argjson expected_draft "${expected_draft}" \
-    --argjson archive_size "${archive_size}" \
-    --argjson checksum_size "${checksum_size}" \
-    '.draft == $expected_draft and
+    --argjson expected "${expected_assets}" \
+    '. as $release |
+     .draft == $expected_draft and
      .tag_name == $tag and
-     (.assets | length) == 2 and
-     ([.assets[].name] | sort) == ([$archive, $checksum] | sort) and
-     any(.assets[]; .name == $archive and .state == "uploaded" and .size == $archive_size and .digest == $archive_digest) and
-     any(.assets[]; .name == $checksum and .state == "uploaded" and .size == $checksum_size and .digest == $checksum_digest)' \
+     ($expected | length) > 0 and
+     (.assets | length) == ($expected | length) and
+     ([.assets[].name] | sort) == ([$expected[].name] | sort) and
+     all($expected[]; . as $want |
+       any($release.assets[];
+         .name == $want.name and .state == "uploaded" and .size == $want.size and .digest == $want.digest))' \
     <<<"${release_json}" >/dev/null
 }

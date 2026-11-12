@@ -9,13 +9,15 @@ LOCAL_PUBLISH="${SCRIPT_DIR}/publish-local-release.sh"
 LOCAL_VERIFY="${SCRIPT_DIR}/verify-release-archive.sh"
 LOCAL_READBACK="${SCRIPT_DIR}/release-readback-common.sh"
 LOCAL_PROVENANCE="${SCRIPT_DIR}/release-provenance.sh"
+LOCAL_BUILD_DMG="${SCRIPT_DIR}/build-dmg.sh"
+LOCAL_VERIFY_DMG="${SCRIPT_DIR}/verify-release-dmg.sh"
 
 fail() {
   printf 'release policy check failed: %s\n' "$1" >&2
   exit 1
 }
 
-for script_path in "${LOCAL_PREPARE}" "${LOCAL_PUBLISH}" "${LOCAL_VERIFY}" "${LOCAL_READBACK}" "${LOCAL_PROVENANCE}" "${BASH_SOURCE[0]}"; do
+for script_path in "${LOCAL_PREPARE}" "${LOCAL_PUBLISH}" "${LOCAL_VERIFY}" "${LOCAL_READBACK}" "${LOCAL_PROVENANCE}" "${LOCAL_BUILD_DMG}" "${LOCAL_VERIFY_DMG}" "${BASH_SOURCE[0]}"; do
   bash -n "${script_path}" || fail "a release script has invalid shell syntax"
 done
 
@@ -54,7 +56,7 @@ if grep -Eiq 'secrets\.|contents:[[:space:]]*write|id-token:|attestations:|artif
 fi
 
 if grep -Eiq 'secrets\.|base64|security[[:space:]]+(import|create-keychain|delete-keychain)' \
-  "${LOCAL_PREPARE}" "${LOCAL_PUBLISH}" "${LOCAL_VERIFY}"; then
+  "${LOCAL_PREPARE}" "${LOCAL_PUBLISH}" "${LOCAL_VERIFY}" "${LOCAL_BUILD_DMG}" "${LOCAL_VERIFY_DMG}"; then
   fail "local release scripts contain forbidden certificate ingestion or hosted-secret behavior"
 fi
 
@@ -68,9 +70,11 @@ for required_prepare_text in \
   'stapler staple' \
   'spctl --assess' \
   'verify-release-archive.sh' \
+  'build-dmg.sh' \
+  '--dmg-checksum' \
   'repo_has_forbidden_release_input' \
   'mv -n --'; do
-  grep -Fq "${required_prepare_text}" "${LOCAL_PREPARE}" \
+  grep -Fq -- "${required_prepare_text}" "${LOCAL_PREPARE}" \
     || fail "local preparation is missing a required release gate"
 done
 
@@ -95,8 +99,8 @@ done
 # shellcheck disable=SC2016
 for required_readback_text in \
   '.state == "uploaded"' \
-  '.digest == $archive_digest' \
-  '.digest == $checksum_digest'; do
+  '.size == $want.size' \
+  '.digest == $want.digest'; do
   grep -Fq -- "${required_readback_text}" "${LOCAL_READBACK}" \
     || fail "GitHub readback helper is missing a required asset check"
 done
@@ -112,33 +116,54 @@ publish_line="$(grep -n 'gh release edit ' "${LOCAL_PUBLISH}" | cut -d: -f1)"
 (( draft_create_line < draft_exit_line && draft_exit_line < publish_line )) \
   || fail "local publication can reach publication without exiting after draft creation"
 
+# The archive check must hand the same verified app to the disk image check.
+grep -Fq 'verify-release-dmg.sh' "${LOCAL_VERIFY}" \
+  || fail "release verification must check the disk image against the verified app"
+grep -Fq -- '--require-notarized' "${LOCAL_VERIFY}" \
+  || fail "release verification must require a notarized disk image"
+
 TAG="v1.2.3"
 ARCHIVE_NAME="labtether-agent-macos-universal.tar.gz"
 CHECKSUM_NAME="${ARCHIVE_NAME}.sha256"
+DMG_NAME="labtether-agent-macos-universal.dmg"
+DMG_CHECKSUM_NAME="${DMG_NAME}.sha256"
 # shellcheck source=scripts/release-readback-common.sh
 source "${LOCAL_READBACK}"
-archive_hash="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-checksum_hash="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-release_json="$(jq -n \
-  --arg tag "${TAG}" --arg archive "${ARCHIVE_NAME}" --arg checksum "${CHECKSUM_NAME}" \
-  --arg archive_digest "sha256:${archive_hash}" --arg checksum_digest "sha256:${checksum_hash}" \
-  '{draft: true, tag_name: $tag, assets: [
-    {name: $archive, state: "uploaded", size: 1000, digest: $archive_digest},
-    {name: $checksum, state: "uploaded", size: 94, digest: $checksum_digest}
-  ]}')"
-validate_github_release_asset_readback "${release_json}" true "${archive_hash}" "${checksum_hash}" 1000 94 \
+asset_dir="$(mktemp -d "${TMPDIR:-/tmp}/labtether-readback-check.XXXXXX")"
+printf 'archive\n' >"${asset_dir}/${ARCHIVE_NAME}"
+printf 'archive checksum\n' >"${asset_dir}/${CHECKSUM_NAME}"
+printf 'disk image\n' >"${asset_dir}/${DMG_NAME}"
+printf 'disk image checksum\n' >"${asset_dir}/${DMG_CHECKSUM_NAME}"
+expected_assets="$(release_asset_expectations \
+  "${asset_dir}/${ARCHIVE_NAME}" "${asset_dir}/${CHECKSUM_NAME}" \
+  "${asset_dir}/${DMG_NAME}" "${asset_dir}/${DMG_CHECKSUM_NAME}")" \
+  || fail "local release assets could not be measured"
+rm -rf "${asset_dir}"
+[[ "$(jq -r 'length' <<<"${expected_assets}")" == "4" ]] || fail "expected four measured release assets"
+release_json="$(jq -n --arg tag "${TAG}" --argjson expected "${expected_assets}" \
+  '{draft: true, tag_name: $tag, assets: [$expected[] | . + {state: "uploaded"}]}')"
+validate_github_release_asset_readback "${release_json}" true "${expected_assets}" \
   || fail "GitHub readback fixture rejected the valid draft"
 published_json="$(jq '.draft = false' <<<"${release_json}")"
-validate_github_release_asset_readback "${published_json}" false "${archive_hash}" "${checksum_hash}" 1000 94 \
+validate_github_release_asset_readback "${published_json}" false "${expected_assets}" \
   || fail "GitHub readback fixture rejected the valid published release"
-if validate_github_release_asset_readback "$(jq '.assets[0].digest = null' <<<"${release_json}")" true "${archive_hash}" "${checksum_hash}" 1000 94; then
+if validate_github_release_asset_readback "$(jq '.assets[0].digest = null' <<<"${release_json}")" true "${expected_assets}"; then
   fail "GitHub readback fixture accepted a missing archive digest"
 fi
-if validate_github_release_asset_readback "$(jq '.assets[1].state = "new"' <<<"${release_json}")" true "${archive_hash}" "${checksum_hash}" 1000 94; then
+if validate_github_release_asset_readback "$(jq '.assets[1].state = "new"' <<<"${release_json}")" true "${expected_assets}"; then
   fail "GitHub readback fixture accepted a non-uploaded checksum asset"
 fi
-if validate_github_release_asset_readback "$(jq '.assets += [{name: "extra", state: "uploaded", size: 1, digest: "sha256:cccc"}]' <<<"${release_json}")" true "${archive_hash}" "${checksum_hash}" 1000 94; then
+if validate_github_release_asset_readback "$(jq '.assets[2].size += 1' <<<"${release_json}")" true "${expected_assets}"; then
+  fail "GitHub readback fixture accepted a disk image of another size"
+fi
+if validate_github_release_asset_readback "$(jq '.assets += [{name: "extra", state: "uploaded", size: 1, digest: "sha256:cccc"}]' <<<"${release_json}")" true "${expected_assets}"; then
   fail "GitHub readback fixture accepted an unexpected extra asset"
+fi
+if validate_github_release_asset_readback "$(jq --arg dmg "${DMG_NAME}" '.assets |= map(select(.name != $dmg))' <<<"${release_json}")" true "${expected_assets}"; then
+  fail "GitHub readback fixture accepted a release without the disk image"
+fi
+if validate_github_release_asset_readback "${release_json}" true '[]'; then
+  fail "GitHub readback fixture accepted an empty expectation"
 fi
 
 # GitHub's releases/tags endpoint omits drafts, so publication must look the
@@ -154,7 +179,7 @@ other_json="$(jq '.tag_name = "v1.2.2" | .draft = false' <<<"${release_json}")"
 GH_RELEASE_PAGES="$(jq -cn --argjson other "${other_json}" --argjson draft "${release_json}" '[[$other], [$other, $draft]]')"
 found_json="$(github_release_by_tag labtether/labtether-mac "${TAG}")" \
   || fail "release lookup missed a draft on a later page"
-validate_github_release_asset_readback "${found_json}" true "${archive_hash}" "${checksum_hash}" 1000 94 \
+validate_github_release_asset_readback "${found_json}" true "${expected_assets}" \
   || fail "release lookup did not return the draft release object"
 GH_RELEASE_PAGES="$(jq -cn --argjson other "${other_json}" '[[$other], []]')"
 if github_release_by_tag labtether/labtether-mac "${TAG}" >/dev/null 2>&1; then
@@ -188,5 +213,6 @@ write_release_provenance "${provenance_dir}/release-provenance.json" "${TAG}" \
 rm -rf "${provenance_dir}"
 
 bash "${SCRIPT_DIR}/test-release-source-policy.sh"
+bash "${SCRIPT_DIR}/test-release-dmg.sh"
 
 printf 'Release isolation policy passed.\n'

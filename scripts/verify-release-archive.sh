@@ -5,6 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd -P)"
 ARCHIVE=""
 CHECKSUM=""
+DMG=""
+DMG_CHECKSUM=""
 TAG=""
 WRAPPER_COMMIT=""
 AGENT_COMMIT=""
@@ -28,6 +30,7 @@ fail() {
 usage() {
   printf '%s\n' \
     'Usage: scripts/verify-release-archive.sh --archive PATH --checksum PATH' \
+    '       --dmg PATH --dmg-checksum PATH' \
     '       --tag vX.Y.Z --wrapper-commit SHA --agent-commit SHA' >&2
 }
 
@@ -35,6 +38,8 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --archive) ARCHIVE="${2:?--archive requires a value}"; shift 2 ;;
     --checksum) CHECKSUM="${2:?--checksum requires a value}"; shift 2 ;;
+    --dmg) DMG="${2:?--dmg requires a value}"; shift 2 ;;
+    --dmg-checksum) DMG_CHECKSUM="${2:?--dmg-checksum requires a value}"; shift 2 ;;
     --tag) TAG="${2:?--tag requires a value}"; shift 2 ;;
     --wrapper-commit) WRAPPER_COMMIT="${2:?--wrapper-commit requires a value}"; shift 2 ;;
     --agent-commit) AGENT_COMMIT="${2:?--agent-commit requires a value}"; shift 2 ;;
@@ -50,6 +55,8 @@ done
 [[ -n "${CHECKSUM}" && -f "${CHECKSUM}" && ! -L "${CHECKSUM}" ]] || fail "checksum must be a non-symlink regular file"
 [[ "$(basename "${ARCHIVE}")" == "labtether-agent-macos-universal.tar.gz" ]] || fail "unexpected archive filename"
 [[ "$(basename "${CHECKSUM}")" == "labtether-agent-macos-universal.tar.gz.sha256" ]] || fail "unexpected checksum filename"
+[[ -n "${DMG}" && -f "${DMG}" && ! -L "${DMG}" ]] || fail "disk image must be a non-symlink regular file"
+[[ -n "${DMG_CHECKSUM}" && -f "${DMG_CHECKSUM}" && ! -L "${DMG_CHECKSUM}" ]] || fail "disk image checksum must be a non-symlink regular file"
 
 line_count="$(wc -l < "${CHECKSUM}" | tr -d ' ')"
 [[ "${line_count}" == "1" ]] || fail "checksum must contain exactly one line"
@@ -160,4 +167,12 @@ unset APP_DEVELOPER_AUTHORITY HOST_DEVELOPER_AUTHORITY CHILD_DEVELOPER_AUTHORITY
 xcrun stapler validate "${APP_PATH}" >/dev/null 2>&1 || fail "stapled notarization ticket is missing or invalid"
 spctl --assess --type execute --verbose=4 "${APP_PATH}" >/dev/null 2>&1 || fail "Gatekeeper assessment failed"
 
-printf 'Verified notarized LabTether macOS release archive for %s.\n' "${TAG}"
+# The disk image must hold this same verified app and carry its own
+# Developer ID signature and stapled ticket.
+"${SCRIPT_DIR}/verify-release-dmg.sh" \
+  --dmg "${DMG}" \
+  --checksum "${DMG_CHECKSUM}" \
+  --app "${APP_PATH}" \
+  --require-notarized >/dev/null || fail "release disk image verification failed"
+
+printf 'Verified notarized LabTether macOS release archive and disk image for %s.\n' "${TAG}"
