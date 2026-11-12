@@ -35,10 +35,12 @@
         "Package.swift",
         "Sources/LabTetherAgent/Resources/**",
         "scripts/build-app.sh",
+        "scripts/build-dmg.sh",
         "scripts/publish-local-release.sh",
         "scripts/release-*.sh",
         "scripts/validate-app.sh",
-        "scripts/verify-release-archive.sh"
+        "scripts/verify-release-archive.sh",
+        "scripts/verify-release-dmg.sh"
       ],
       "contracts": [
         "mac-installed-app"

@@ -20,21 +20,21 @@ DRY_RUN=false
 TEMP_BASE=""
 TEMP_ROOT=""
 OUTPUT_DIR=""
-ARCHIVE_OUTPUT_MOVED=false
-CHECKSUM_OUTPUT_MOVED=false
+MOVED_OUTPUTS=()
 RELEASE_COMPLETE=false
 ARCHIVE_NAME="labtether-agent-macos-universal.tar.gz"
 CHECKSUM_NAME="${ARCHIVE_NAME}.sha256"
+DMG_NAME="labtether-agent-macos-universal.dmg"
+DMG_CHECKSUM_NAME="${DMG_NAME}.sha256"
 
 cleanup() {
   unset SIGNING_IDENTITY NOTARY_PROFILE
   if [[ "${RELEASE_COMPLETE}" != "true" && -n "${OUTPUT_DIR}" \
     && -d "${OUTPUT_DIR}" && ! -L "${OUTPUT_DIR}" ]]; then
-    if [[ "${ARCHIVE_OUTPUT_MOVED}" == "true" ]]; then
-      rm -f -- "${OUTPUT_DIR}/${ARCHIVE_NAME}"
-    fi
-    if [[ "${CHECKSUM_OUTPUT_MOVED}" == "true" ]]; then
-      rm -f -- "${OUTPUT_DIR}/${CHECKSUM_NAME}"
+    if [[ ${#MOVED_OUTPUTS[@]} -gt 0 ]]; then
+      for moved_output in "${MOVED_OUTPUTS[@]}"; do
+        rm -f -- "${OUTPUT_DIR}/${moved_output}"
+      done
     fi
   fi
   if [[ -n "${TEMP_ROOT}" && -n "${TEMP_BASE}" \
@@ -165,7 +165,7 @@ esac
 [[ "${NOTARY_PROFILE}" =~ ^[A-Za-z0-9._-]+$ ]] \
   || fail "the notary profile selector contains unsupported characters"
 
-for command_name in codesign ditto find git go lipo plutil security shasum spctl swift tar xattr xcrun; do
+for command_name in codesign ditto find git go hdiutil lipo plutil security shasum spctl swift tar xattr xcrun; do
   command -v "${command_name}" >/dev/null 2>&1 || fail "a required local release command is unavailable"
 done
 [[ "$(go version)" == "go version go1.27.3 "* ]] \
@@ -236,7 +236,6 @@ fi
 if ! codesign --force --options runtime --timestamp --sign "${SIGNING_IDENTITY}" "${APP_PATH}" >/dev/null 2>&1; then
   fail "signing the app bundle failed"
 fi
-unset SIGNING_IDENTITY
 if ! "${SCRIPT_DIR}/validate-app.sh" \
   "${APP_PATH}" \
   --architectures arm64,x86_64 \
@@ -256,7 +255,6 @@ if ! xcrun notarytool submit "${NOTARY_ARCHIVE}" \
   --output-format json >"${NOTARY_RESULT}" 2>/dev/null; then
   fail "Apple notarization submission failed"
 fi
-unset NOTARY_PROFILE
 notary_result_status="$(plutil -extract status raw "${NOTARY_RESULT}" 2>/dev/null || true)"
 [[ "${notary_result_status}" == "Accepted" ]] || fail "Apple notarization did not return Accepted"
 
@@ -284,9 +282,39 @@ archive_hash="$(shasum -a 256 "${ARCHIVE_PATH}" | awk '{ print $1 }')"
 printf '%s  %s\n' "${archive_hash}" "${ARCHIVE_NAME}" >"${CHECKSUM_PATH}"
 chmod 0600 "${ARCHIVE_PATH}" "${CHECKSUM_PATH}"
 
+# The disk image holds the stapled app. It gets its own Developer ID
+# signature, notarization and stapled ticket, so it opens without a warning.
+DMG_PATH="${TEMP_ROOT}/${DMG_NAME}"
+DMG_CHECKSUM_PATH="${TEMP_ROOT}/${DMG_CHECKSUM_NAME}"
+DMG_NOTARY_RESULT="${NOTARY_DIR}/dmg-result.json"
+"${SCRIPT_DIR}/build-dmg.sh" --app "${APP_PATH}" --output "${DMG_PATH}" >/dev/null \
+  || fail "building the disk image failed"
+if ! codesign --force --timestamp --sign "${SIGNING_IDENTITY}" "${DMG_PATH}" >/dev/null 2>&1; then
+  fail "signing the disk image failed"
+fi
+unset SIGNING_IDENTITY
+if ! xcrun notarytool submit "${DMG_PATH}" \
+  --keychain-profile "${NOTARY_PROFILE}" \
+  --wait \
+  --output-format json >"${DMG_NOTARY_RESULT}" 2>/dev/null; then
+  fail "Apple notarization submission of the disk image failed"
+fi
+unset NOTARY_PROFILE
+dmg_notary_result_status="$(plutil -extract status raw "${DMG_NOTARY_RESULT}" 2>/dev/null || true)"
+[[ "${dmg_notary_result_status}" == "Accepted" ]] || fail "Apple notarization of the disk image did not return Accepted"
+if ! xcrun stapler staple "${DMG_PATH}" >/dev/null 2>&1; then
+  fail "stapling the notarization ticket to the disk image failed"
+fi
+dmg_hash="$(shasum -a 256 "${DMG_PATH}" | awk '{ print $1 }')"
+[[ "${dmg_hash}" =~ ^[0-9a-f]{64}$ ]] || fail "could not calculate the final disk image checksum"
+printf '%s  %s\n' "${dmg_hash}" "${DMG_NAME}" >"${DMG_CHECKSUM_PATH}"
+chmod 0600 "${DMG_PATH}" "${DMG_CHECKSUM_PATH}"
+
 "${SCRIPT_DIR}/verify-release-archive.sh" \
   --archive "${ARCHIVE_PATH}" \
   --checksum "${CHECKSUM_PATH}" \
+  --dmg "${DMG_PATH}" \
+  --dmg-checksum "${DMG_CHECKSUM_PATH}" \
   --tag "${TAG}" \
   --wrapper-commit "${WRAPPER_COMMIT}" \
   --agent-commit "${AGENT_COMMIT}"
@@ -294,21 +322,23 @@ chmod 0600 "${ARCHIVE_PATH}" "${CHECKSUM_PATH}"
 if find "${OUTPUT_DIR}" -mindepth 1 -maxdepth 1 -print -quit | grep -q .; then
   fail "output directory changed before final placement"
 fi
-[[ ! -e "${OUTPUT_DIR}/${ARCHIVE_NAME}" && ! -L "${OUTPUT_DIR}/${ARCHIVE_NAME}" ]] \
-  || fail "release archive destination already exists"
-[[ ! -e "${OUTPUT_DIR}/${CHECKSUM_NAME}" && ! -L "${OUTPUT_DIR}/${CHECKSUM_NAME}" ]] \
-  || fail "release checksum destination already exists"
-mv -n -- "${ARCHIVE_PATH}" "${OUTPUT_DIR}/${ARCHIVE_NAME}"
-[[ ! -e "${ARCHIVE_PATH}" && -f "${OUTPUT_DIR}/${ARCHIVE_NAME}" && ! -L "${OUTPUT_DIR}/${ARCHIVE_NAME}" ]] \
-  || fail "release archive placement did not complete without overwrite"
-ARCHIVE_OUTPUT_MOVED=true
-mv -n -- "${CHECKSUM_PATH}" "${OUTPUT_DIR}/${CHECKSUM_NAME}"
-[[ ! -e "${CHECKSUM_PATH}" && -f "${OUTPUT_DIR}/${CHECKSUM_NAME}" && ! -L "${OUTPUT_DIR}/${CHECKSUM_NAME}" ]] \
-  || fail "release checksum placement did not complete without overwrite"
-CHECKSUM_OUTPUT_MOVED=true
+for output_name in "${ARCHIVE_NAME}" "${CHECKSUM_NAME}" "${DMG_NAME}" "${DMG_CHECKSUM_NAME}"; do
+  [[ ! -e "${OUTPUT_DIR}/${output_name}" && ! -L "${OUTPUT_DIR}/${output_name}" ]] \
+    || fail "a release asset destination already exists"
+done
+for output_name in "${ARCHIVE_NAME}" "${CHECKSUM_NAME}" "${DMG_NAME}" "${DMG_CHECKSUM_NAME}"; do
+  mv -n -- "${TEMP_ROOT}/${output_name}" "${OUTPUT_DIR}/${output_name}"
+  [[ ! -e "${TEMP_ROOT}/${output_name}" && -f "${OUTPUT_DIR}/${output_name}" && ! -L "${OUTPUT_DIR}/${output_name}" ]] \
+    || fail "release asset placement did not complete without overwrite"
+  MOVED_OUTPUTS+=("${output_name}")
+done
 [[ "$(shasum -a 256 "${OUTPUT_DIR}/${ARCHIVE_NAME}" | awk '{ print $1 }')" == "${archive_hash}" ]] \
   || fail "placed release archive changed unexpectedly"
-chmod 0644 "${OUTPUT_DIR}/${ARCHIVE_NAME}" "${OUTPUT_DIR}/${CHECKSUM_NAME}"
+[[ "$(shasum -a 256 "${OUTPUT_DIR}/${DMG_NAME}" | awk '{ print $1 }')" == "${dmg_hash}" ]] \
+  || fail "placed release disk image changed unexpectedly"
+for output_name in "${ARCHIVE_NAME}" "${CHECKSUM_NAME}" "${DMG_NAME}" "${DMG_CHECKSUM_NAME}"; do
+  chmod 0644 "${OUTPUT_DIR}/${output_name}"
+done
 RELEASE_COMPLETE=true
 
-printf 'Prepared exactly two verified local release assets for %s. Nothing was published.\n' "${TAG}"
+printf 'Prepared exactly four verified local release assets for %s. Nothing was published.\n' "${TAG}"

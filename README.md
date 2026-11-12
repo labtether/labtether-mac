@@ -23,20 +23,29 @@ tells you whether it is connected.
 - **launchd services.** See and manage them from the hub.
 - **Native notifications** when the connection drops or a high or critical
   alert fires.
-- **Update notice.** The menu shows when a newer signed release is out. The app
+- **Update notice.** The menu shows when a newer release is out. The app
   checks once a day and never downloads anything itself. Turn it off in
   Settings › Advanced.
 
 ## Install
 
-1. Download `labtether-agent-macos-universal.tar.gz` from
+1. Download `labtether-agent-macos-universal.dmg` from
    [Releases](https://github.com/labtether/labtether-mac/releases/latest).
-2. Open it and drag **LabTether Agent.app** to Applications.
-3. Launch it. The menu bar icon walks you through connecting to your hub.
+2. Open it and drag **LabTether Agent** to **Applications**.
+3. Open LabTether Agent from Applications. The menu bar icon walks you through
+   connecting to your hub.
+
+If the release has no disk image, download
+`labtether-agent-macos-universal.tar.gz`, open it and drag
+**LabTether Agent.app** to Applications. Release 2.0.0 is one of these.
 
 You need macOS 13 (Ventura) or newer, a running hub, and an enrollment token
-from the hub (**Add device** on the Devices page). The app is signed and
-notarized by Apple. To check the download yourself first, see
+from the hub (**Add device** on the Devices page).
+
+The release notes say whether a release is signed and notarized by Apple.
+Release 2.0.0 is not. macOS blocks the first open of an app that is not
+notarized: open it once, then choose **Open Anyway** in System Settings ›
+Privacy & Security. To check the download yourself first, see
 [docs/verify-download.md](docs/verify-download.md).
 
 ## Uninstall

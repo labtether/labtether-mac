@@ -15,6 +15,8 @@ DRY_RUN=false
 DRAFT_MAY_EXIST=false
 ARCHIVE_NAME="labtether-agent-macos-universal.tar.gz"
 CHECKSUM_NAME="${ARCHIVE_NAME}.sha256"
+DMG_NAME="labtether-agent-macos-universal.dmg"
+DMG_CHECKSUM_NAME="${DMG_NAME}.sha256"
 
 # shellcheck source=scripts/release-readback-common.sh
 source "${SCRIPT_DIR}/release-readback-common.sh"
@@ -86,10 +88,6 @@ remote_tag_commit() {
   fi
 }
 
-sha256_file() {
-  shasum -a 256 -- "$1" | awk '{print tolower($1)}'
-}
-
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --tag) TAG="${2:?--tag requires a value}"; shift 2 ;;
@@ -125,15 +123,19 @@ fi
 shopt -s nullglob dotglob
 release_entries=("${RELEASE_DIR}"/*)
 shopt -u nullglob dotglob
-[[ ${#release_entries[@]} -eq 2 ]] || fail "release directory must contain exactly two entries"
+[[ ${#release_entries[@]} -eq 4 ]] || fail "release directory must contain exactly four entries"
 
 ARCHIVE_PATH="${RELEASE_DIR}/${ARCHIVE_NAME}"
 CHECKSUM_PATH="${RELEASE_DIR}/${CHECKSUM_NAME}"
 [[ -f "${ARCHIVE_PATH}" && ! -L "${ARCHIVE_PATH}" ]] || fail "release archive must be a non-symlink regular file"
 [[ -f "${CHECKSUM_PATH}" && ! -L "${CHECKSUM_PATH}" ]] || fail "release checksum must be a non-symlink regular file"
+DMG_PATH="${RELEASE_DIR}/${DMG_NAME}"
+DMG_CHECKSUM_PATH="${RELEASE_DIR}/${DMG_CHECKSUM_NAME}"
+[[ -f "${DMG_PATH}" && ! -L "${DMG_PATH}" ]] || fail "release disk image must be a non-symlink regular file"
+[[ -f "${DMG_CHECKSUM_PATH}" && ! -L "${DMG_CHECKSUM_PATH}" ]] || fail "release disk image checksum must be a non-symlink regular file"
 for release_entry in "${release_entries[@]}"; do
   case "$(basename "${release_entry}")" in
-    "${ARCHIVE_NAME}"|"${CHECKSUM_NAME}") ;;
+    "${ARCHIVE_NAME}"|"${CHECKSUM_NAME}"|"${DMG_NAME}"|"${DMG_CHECKSUM_NAME}") ;;
     *) fail "release directory contains an unexpected entry" ;;
   esac
 done
@@ -152,7 +154,7 @@ AGENT_COMMIT="$(git -C "${AGENT_REPO}" rev-parse HEAD)"
   || fail "source commits must be full lowercase SHAs"
 
 if [[ "${DRY_RUN}" == "true" ]]; then
-  printf 'Dry run passed local tag, source, and two-file release-directory checks for %s; no network or publication action was taken.\n' "${TAG}"
+  printf 'Dry run passed local tag, source, and four-file release-directory checks for %s; no network or publication action was taken.\n' "${TAG}"
   exit 0
 fi
 
@@ -181,6 +183,8 @@ fi
 TMPDIR="${TEMP_BASE}" "${SCRIPT_DIR}/verify-release-archive.sh" \
   --archive "${ARCHIVE_PATH}" \
   --checksum "${CHECKSUM_PATH}" \
+  --dmg "${DMG_PATH}" \
+  --dmg-checksum "${DMG_CHECKSUM_PATH}" \
   --tag "${TAG}" \
   --wrapper-commit "${WRAPPER_COMMIT}" \
   --agent-commit "${AGENT_COMMIT}"
@@ -201,10 +205,9 @@ if ! gh api "repos/${REPOSITORY}" >/dev/null 2>&1; then
   fail "the publication repository could not be verified"
 fi
 
-ARCHIVE_HASH="$(sha256_file "${ARCHIVE_PATH}")"
-CHECKSUM_HASH="$(sha256_file "${CHECKSUM_PATH}")"
-ARCHIVE_SIZE="$(stat -f '%z' -- "${ARCHIVE_PATH}")"
-CHECKSUM_SIZE="$(stat -f '%z' -- "${CHECKSUM_PATH}")"
+EXPECTED_ASSETS="$(release_asset_expectations \
+  "${ARCHIVE_PATH}" "${CHECKSUM_PATH}" "${DMG_PATH}" "${DMG_CHECKSUM_PATH}")" \
+  || fail "the local release assets could not be measured"
 
 if [[ "${RELEASE_ACTION}" == "draft" ]]; then
   if gh release view "${TAG}" --repo "${REPOSITORY}" >/dev/null 2>&1; then
@@ -214,28 +217,30 @@ if [[ "${RELEASE_ACTION}" == "draft" ]]; then
   if ! gh release create "${TAG}" \
     "${ARCHIVE_PATH}" \
     "${CHECKSUM_PATH}" \
+    "${DMG_PATH}" \
+    "${DMG_CHECKSUM_PATH}" \
     --repo "${REPOSITORY}" \
     --draft \
     --verify-tag \
     --title "LabTether Mac Agent ${TAG#v}" \
-    --notes 'Signed and notarized universal macOS agent. Verify the companion SHA-256 file before installation.' \
+    --notes 'Signed and notarized universal macOS agent, as a disk image and an archive. Each has a SHA-256 file.' \
     >/dev/null 2>&1; then
-    fail "creating the two-asset draft release failed"
+    fail "creating the four-asset draft release failed"
   fi
   draft_json="$(github_release_by_tag "${REPOSITORY}" "${TAG}")" \
     || fail "the draft release could not be inspected"
   validate_github_release_asset_readback \
-    "${draft_json}" true "${ARCHIVE_HASH}" "${CHECKSUM_HASH}" "${ARCHIVE_SIZE}" "${CHECKSUM_SIZE}" \
+    "${draft_json}" true "${EXPECTED_ASSETS}" \
     || fail "the draft release does not exactly match the verified local assets"
   DRAFT_MAY_EXIST=false
-  printf 'Created and verified the two-asset draft for %s. Inspect it, then use a separate --confirm-publish invocation.\n' "${TAG}"
+  printf 'Created and verified the four-asset draft for %s. Inspect it, then use a separate --confirm-publish invocation.\n' "${TAG}"
   exit 0
 fi
 
 draft_json="$(github_release_by_tag "${REPOSITORY}" "${TAG}")" \
   || fail "an existing draft release is required before publication"
 validate_github_release_asset_readback \
-  "${draft_json}" true "${ARCHIVE_HASH}" "${CHECKSUM_HASH}" "${ARCHIVE_SIZE}" "${CHECKSUM_SIZE}" \
+  "${draft_json}" true "${EXPECTED_ASSETS}" \
   || fail "fresh draft inspection does not match the verified local assets"
 if ! gh release edit "${TAG}" --repo "${REPOSITORY}" --draft=false >/dev/null 2>&1; then
   fail "the verified draft could not be published"
@@ -243,7 +248,7 @@ fi
 published_json="$(github_release_by_tag "${REPOSITORY}" "${TAG}")" \
   || fail "the published release could not be inspected"
 validate_github_release_asset_readback \
-  "${published_json}" false "${ARCHIVE_HASH}" "${CHECKSUM_HASH}" "${ARCHIVE_SIZE}" "${CHECKSUM_SIZE}" \
+  "${published_json}" false "${EXPECTED_ASSETS}" \
   || fail "the published release does not exactly match the verified local assets"
 
-printf 'Published the independently re-inspected two-asset macOS release for %s.\n' "${TAG}"
+printf 'Published the independently re-inspected four-asset macOS release for %s.\n' "${TAG}"

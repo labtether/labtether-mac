@@ -71,6 +71,22 @@ jobs:
               --output-dir "${RUNNER_TEMP}/source-verification" \
               --no-sign
 
+      # Proves the tagged disk image builds and holds exactly the app. The
+      # release disk image is rebuilt from the notarized app on the release Mac.
+      - name: Build and check the unsigned disk image
+        run: |
+          set -euo pipefail
+          out="${RUNNER_TEMP}/source-verification-disk-image"
+          mkdir -p "${out}"
+          ./scripts/build-dmg.sh \
+            --app "${RUNNER_TEMP}/source-verification/LabTether Agent.app" \
+            --output "${out}/labtether-agent-macos-universal.dmg"
+          (cd "${out}" && shasum -a 256 labtether-agent-macos-universal.dmg > labtether-agent-macos-universal.dmg.sha256)
+          ./scripts/verify-release-dmg.sh \
+            --dmg "${out}/labtether-agent-macos-universal.dmg" \
+            --checksum "${out}/labtether-agent-macos-universal.dmg.sha256" \
+            --app "${RUNNER_TEMP}/source-verification/LabTether Agent.app"
+
       - name: Confirm source checkouts stayed clean
         run: |
           test "$(git status --porcelain=v1 --untracked-files=all)" = "?? agent-core/"

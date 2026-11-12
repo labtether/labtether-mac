@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/). The older
 `2026.1` entry predates the switch from calendar versions.
 
+## [Unreleased]
+
+### Added
+- Releases also come as a disk image, `labtether-agent-macos-universal.dmg`,
+  with the app and a shortcut to Applications, and its own `.sha256` file.
+  The `.tar.gz` stays under the same name.
+
+### Fixed
+- The README said every release is signed and notarized by Apple. Release
+  2.0.0 is not. The README and the download check guide now point to the
+  release notes and give the steps for a release that is not notarized.
+
 ## [2.0.1]
 
 No change to the app since 2.0.0. It is released again so that every part of
