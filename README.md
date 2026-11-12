@@ -35,9 +35,9 @@ tells you whether it is connected.
 3. Open LabTether Agent from Applications. The menu bar icon walks you through
    connecting to your hub.
 
-Release 2.0.0 has no disk image. Download
+If the release has no disk image, download
 `labtether-agent-macos-universal.tar.gz`, open it and drag
-**LabTether Agent.app** to Applications.
+**LabTether Agent.app** to Applications. Release 2.0.0 is one of these.
 
 You need macOS 13 (Ventura) or newer, a running hub, and an enrollment token
 from the hub (**Add device** on the Devices page).

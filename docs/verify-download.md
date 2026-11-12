@@ -11,7 +11,8 @@ shasum -a 256 -c labtether-agent-macos-universal.dmg.sha256
 ```
 
 The archive `labtether-agent-macos-universal.tar.gz` has its own `.sha256`
-file and is checked the same way. Release 2.0.0 has only the archive.
+file and is checked the same way. A release without a disk image, such as
+2.0.0, has only the archive.
 
 ## Signature and notarization
 

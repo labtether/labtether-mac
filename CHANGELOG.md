@@ -18,6 +18,12 @@ and this project uses [Semantic Versioning](https://semver.org/). The older
   2.0.0 is not. The README and the download check guide now point to the
   release notes and give the steps for a release that is not notarized.
 
+## [2.0.1]
+
+No change to the app since 2.0.0. It is released again so that every part of
+LabTether 2.0.1 carries the same version. The bundled agent core is
+`labtether-agent v2.0.1`, which is the same code as v2.0.0.
+
 ## [2.0.0] - unreleased
 
 The version moves to 2.0.0 with the LabTether 2.0 release. The bundled agent
