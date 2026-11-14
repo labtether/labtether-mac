@@ -1,157 +1,120 @@
 # Releasing the macOS agent
 
-LabTether macOS releases are signed and notarized only on an authorized local
-Mac. GitHub Actions verifies tagged source and builds an unsigned universal app,
-but it does not receive signing certificates, private keys, notary credentials,
-signed archives, or permission to publish a release.
+macOS releases are signed by **Developer ID Application: Watari Labs Pty Ltd
+(D2WZW3YTL6)** and notarized by Apple. The hand-started GitHub workflow
+[`signed-release.yml`](../.github/workflows/signed-release.yml) does the work
+and stops at a draft release. A maintainer inspects the draft and publishes it.
+The release scripts refuse any other Apple team (`RELEASE_TEAM_ID` in
+[`scripts/release-signing.sh`](../scripts/release-signing.sh)).
 
-The release is intentionally split into three independently confirmed commands:
+| Job | Secrets | What it does |
+|---|---|---|
+| `build` | none | Runs the Swift and Go tests, builds the unsigned universal app with its release record (`scripts/prepare-unsigned-release.sh`) |
+| `sign` | the five below, through the `mac-release-signing` environment | Signs the app, has Apple notarize it, staples the ticket, builds the disk image, signs and notarizes that too, then checks all four files (`scripts/sign-release-ci.sh`) |
+| `draft` | none, `contents: write` only | Re-checks the four files and the tags, then creates a draft with exactly those files (`scripts/publish-local-release.sh --confirm-draft`) |
 
-1. `release-local.sh` tests two clean, identically tagged checkouts, builds,
-   signs, notarizes, staples, packages, re-extracts, and verifies the app. It
-   then puts the stapled app in a disk image, and signs, notarizes, staples
-   and verifies that image too.
-2. `publish-local-release.sh --confirm-draft` re-verifies the exact local bytes
-   and remote tags, creates a draft containing exactly the archive, the disk
-   image and their checksums, verifies their GitHub names, sizes, uploaded
-   states, and SHA-256 digests, then exits while the release is still a draft.
-3. After independent inspection, a separate
-   `publish-local-release.sh --confirm-publish` invocation repeats every local
-   check, freshly verifies the existing GitHub draft, and only then publishes.
+The release files:
 
-Neither script imports certificate files. The signing identity and the
-notarytool credential profile must already exist in the local Keychain. All
-intermediate files live in a mode-0700 temporary directory outside both source
-repositories and are deleted on every exit. The only retained files are the
-final archive, the disk image and their checksums in an explicitly selected
-external output directory.
+- `labtether-agent-macos-universal.dmg` and `.dmg.sha256`, the download people use
+- `labtether-agent-macos-universal.tar.gz` and `.tar.gz.sha256`, the name the
+  Hub's agent list and older links use
 
-## One-time local setup
+## One-time setup
 
-Import the Developer ID Application identity into the authorized Mac's login
-Keychain using Apple's local tools. Do not copy credentials into either source
-repository or any build directory.
+The `mac-release-signing` environment admits the `main` branch only. It holds
+five secrets. Set each from a file or a hidden prompt, so no value lands in
+shell history or on screen:
 
-Store and validate the notarization credential through notarytool's interactive
-Keychain prompt:
+| Secret | Value |
+|---|---|
+| `MAC_SIGNING_P12_BASE64` | The Developer ID Application identity, exported from Keychain Access as a `.p12` with a password, in base64 |
+| `MAC_SIGNING_P12_PASSWORD` | That export password |
+| `MAC_NOTARY_KEY` | An App Store Connect team API key (`.p8`) with the Developer role, used only for notarization |
+| `MAC_NOTARY_KEY_ID` | That key's ID |
+| `MAC_NOTARY_ISSUER_ID` | The issuer ID shown above the key list |
+
+```bash
+base64 -i /path/to/developer-id.p12 | gh secret set MAC_SIGNING_P12_BASE64 --env mac-release-signing --repo labtether/labtether-mac
+```
+
+```bash
+gh secret set MAC_SIGNING_P12_PASSWORD --env mac-release-signing --repo labtether/labtether-mac
+```
+
+```bash
+gh secret set MAC_NOTARY_KEY --env mac-release-signing --repo labtether/labtether-mac < /path/to/AuthKey_KEYID.p8
+```
+
+```bash
+gh secret set MAC_NOTARY_KEY_ID --env mac-release-signing --repo labtether/labtether-mac
+```
+
+```bash
+gh secret set MAC_NOTARY_ISSUER_ID --env mac-release-signing --repo labtether/labtether-mac
+```
+
+Delete the exported `.p12` after the upload. Keep the `.p8` in the local
+signing folder; Apple offers it for download once.
+
+The current identity chains to Apple's first Developer ID intermediate, which
+expires on 1 February 2027, so the identity expires then too. Releases signed
+before that date keep working. For later releases, create a new Developer ID
+Application certificate in the Apple Developer account and replace the two
+`MAC_SIGNING_P12_*` secrets. The signer already trusts the G2 intermediate the
+new certificate chains to.
+
+## Proof run
+
+A proof run signs and notarizes the current `main` and keeps nothing: no
+artifact, no release. Use it after changing the secrets or the release scripts.
+
+```bash
+gh workflow run signed-release.yml --repo labtether/labtether-mac --ref main -f mode=proof -f tag=v2.0.1 -f confirm=v2.0.1
+```
+
+`tag` only stamps the version in proof mode.
+
+## Release run
+
+1. Push the same tag to `labtether-mac` and `labtether-agent` (the
+   prerequisites stage of `scripts/release-all.sh` in the workspace does this).
+2. Start the workflow with the tag, typed twice:
+
+   ```bash
+   gh workflow run signed-release.yml --repo labtether/labtether-mac --ref main -f mode=release -f tag=vX.Y.Z -f confirm=vX.Y.Z
+   ```
+
+3. The draft job ends with exactly four files whose GitHub names, sizes and
+   SHA-256 digests match the checked files. Replace the draft's placeholder
+   notes with the CHANGELOG section, check the files, then publish it on
+   GitHub.
+
+The workflow refuses a run started from any branch but `main`, a tag that is
+not `vX.Y.Z`, or a confirmation that does not repeat the tag.
+
+## Local fallback
+
+A Mac with the identity in its login Keychain and a notarytool profile can
+make the same four files without GitHub:
 
 ```bash
 xcrun notarytool store-credentials LabTetherRelease --validate
 ```
 
-Do not put the identity selector, profile selector, passwords, private keys, or
-credential files in shell scripts, environment files, CI variables, logs, or
-release notes.
-
-## Prepare verified release bytes
-
-Merge the intended changes first. Create the same semantic version tag in both
-the `labtether-mac` and `labtether-agent` repositories. Both checkouts must be
-clean and their `HEAD` commits must exactly equal that local tag.
-
-Create an empty output directory outside both repositories:
-
 ```bash
-release_output="$(mktemp -d "${TMPDIR:-/tmp}/labtether-release-output.XXXXXX")"
-chmod 700 "${release_output}"
+./scripts/release-local.sh --tag vX.Y.Z --build-number BUILD_NUMBER --agent-repo /absolute/path/to/labtether-agent --output-dir /absolute/path/to/empty-dir --confirm-notarize vX.Y.Z
 ```
 
-An offline dry run checks the tag, source, and output boundaries without
-reading the Keychain, building, accessing the network, or changing anything:
+Use the workflow's build number, 10000 × major + 100 × minor + patch (20001
+for 2.0.1). It asks for the identity name and the profile name without echoing them,
+runs the same tests and build as the `build` job, and signs with the same
+steps as the `sign` job. It runs the full test suites, so use a lab Mac for
+it. Publish its output with `scripts/publish-local-release.sh`, first with
+`--confirm-draft vX.Y.Z`, then, in a new invocation after inspecting the
+draft, `--confirm-publish vX.Y.Z`.
 
-```bash
-./scripts/release-local.sh \
-  --tag vX.Y.Z \
-  --build-number BUILD_NUMBER \
-  --agent-repo /absolute/path/to/labtether-agent \
-  --output-dir "${release_output}" \
-  --dry-run
-```
+## Not proven yet
 
-For the real preparation, pass the exact tag a second time as the explicit
-notarization confirmation. The script always reads both selectors silently
-from the controlling terminal; it deliberately has no selector command-line
-options that could leak through shell history or the process list. It disables
-shell tracing before handling inputs and clears both selectors on exit:
-
-```bash
-./scripts/release-local.sh \
-  --tag vX.Y.Z \
-  --build-number BUILD_NUMBER \
-  --agent-repo /absolute/path/to/labtether-agent \
-  --output-dir "${release_output}" \
-  --confirm-notarize vX.Y.Z
-```
-
-Success leaves exactly these four files in the external directory:
-
-- `labtether-agent-macos-universal.tar.gz`
-- `labtether-agent-macos-universal.tar.gz.sha256`
-- `labtether-agent-macos-universal.dmg`
-- `labtether-agent-macos-universal.dmg.sha256`
-
-The disk image is what people download: it holds the app and a shortcut to
-Applications. The archive keeps its name because the Hub's agent list and
-older links use it.
-
-The app contains signed provenance for the exact wrapper tag/commit and bundled
-agent commit. Preparation fails unless the archive checksum, two architectures,
-Developer ID signature, hardened runtime, secure timestamp, stapled ticket, and
-Gatekeeper assessment all pass again after extracting the final archive. The
-disk image must then hold that same app byte for byte and carry its own
-Developer ID signature, stapled ticket and Gatekeeper result.
-
-The disk image steps that need the Developer ID identity and Apple's notary
-service (sign, submit, staple, Gatekeeper) have not run yet: no release has
-been signed since the disk image was added. Building the image and checking
-its contents run in CI and were run on a Mac without signing.
-
-## Publish the exact verified bytes
-
-Push both matching tags, allow the read-only source verification workflow to
-pass, and review the four local files. Draft creation requires its own exact-tag
-confirmation:
-
-```bash
-./scripts/publish-local-release.sh \
-  --tag vX.Y.Z \
-  --agent-repo /absolute/path/to/labtether-agent \
-  --release-dir "${release_output}" \
-  --confirm-draft vX.Y.Z
-```
-
-The command exits after proving the release is still a draft and that all four
-GitHub assets exactly match the verified local names, sizes, uploaded states,
-and SHA-256 digests. Inspect the draft independently. Then use a new invocation:
-
-```bash
-./scripts/publish-local-release.sh \
-  --tag vX.Y.Z \
-  --agent-repo /absolute/path/to/labtether-agent \
-  --release-dir "${release_output}" \
-  --confirm-publish vX.Y.Z
-```
-
-The publisher refuses a dirty checkout, missing or mismatched remote tag, any
-extra release-directory entry, any symlink, a malformed checksum, failed
-signing/notarization/Gatekeeper validation, or anything other than the four
-expected uploaded assets. Draft creation refuses an existing release;
-publication requires an existing exact draft. The two confirmations are
-mutually exclusive, so one invocation cannot both create and publish a release.
-If draft creation or inspection stops partway through, an unpublished draft may
-remain for manual inspection; the script never publishes an unverified draft.
-
-## Disk image without signing
-
-`scripts/build-dmg.sh` builds the disk image from an app and signs nothing.
-`scripts/verify-release-dmg.sh` checks an image against that app: checksum,
-image integrity, exactly the app and the Applications shortcut inside, and
-the app's files byte for byte. `--require-notarized` adds the signature,
-ticket and Gatekeeper checks; a release that ships unsigned leaves it out.
-
-## Release boundary
-
-The tag-triggered GitHub workflow is only a reproducible source gate. It must
-remain read-only and must never sign, notarize, attest, upload artifacts, or
-create a GitHub release. `scripts/test-release-policy.sh` enforces this boundary
-in normal CI and tag verification.
+No release has been signed by the workflow yet. The first proof run is the
+first real test of the keychain import, notarization with the API key,
+stapling and Gatekeeper checks on a GitHub-hosted Mac.

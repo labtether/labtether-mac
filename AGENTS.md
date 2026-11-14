@@ -70,8 +70,13 @@ Read user-facing text once against this list before you ship it.
 - Machines the workspace guide marks as no-touch are out of scope: do not
   query, operate on or cite them.
 - Signing material stays in its local-only folder outside every repository.
-  Never list, copy, print, stage or upload any of it. Signing and notarization
-  need the owner's go-ahead for each release.
+  Never list, copy, print, stage or upload any of it. The one exception, set
+  by the owner on 2026-11-14: the owner puts the Developer ID identity and a
+  notary API key into the `mac-release-signing` GitHub environment for
+  `.github/workflows/signed-release.yml`. Agents never handle those values.
+  Signing and notarization need the owner's go-ahead for each release.
+- Releases are signed by Apple team `D2WZW3YTL6` (Watari Labs Pty Ltd) only.
+  `scripts/release-signing.sh` pins it; `docs/releasing.md` has the steps.
 - Removing repos, branches, worktrees, user files or dirty work needs an exact
   preview and the owner's approval.
 - Prefer a scoped disposable token or an existing session to changing auth.

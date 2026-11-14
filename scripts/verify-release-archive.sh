@@ -3,6 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd -P)"
+# shellcheck source=scripts/release-signing.sh
+source "${SCRIPT_DIR}/release-signing.sh"
 ARCHIVE=""
 CHECKSUM=""
 DMG=""
@@ -76,51 +78,11 @@ case "${TEMP_BASE}/" in
 esac
 WORK_DIR="$(mktemp -d "${TEMP_BASE%/}/labtether-mac-verify.XXXXXX")"
 chmod 700 "${WORK_DIR}"
-ENTRY_LIST="${WORK_DIR}/entries.txt"
-DETAIL_LIST="${WORK_DIR}/entry-details.txt"
-tar -tzf "${ARCHIVE}" > "${ENTRY_LIST}"
-tar -tvzf "${ARCHIVE}" > "${DETAIL_LIST}"
-[[ -s "${ENTRY_LIST}" ]] || fail "archive is empty"
-if [[ -n "$(LC_ALL=C sort "${ENTRY_LIST}" | uniq -d)" ]]; then
-  fail "archive contains duplicate entries"
-fi
-
-while IFS= read -r entry; do
-  [[ -n "${entry}" ]] || fail "archive contains an empty entry"
-  case "${entry}" in
-    /*|../*|*/../*|*/..) fail "archive contains an unsafe path" ;;
-  esac
-  case "${entry}" in
-    "LabTether Agent.app"|"LabTether Agent.app/"|"LabTether Agent.app/"*) ;;
-    *) fail "archive contains an unexpected top-level entry" ;;
-  esac
-done < "${ENTRY_LIST}"
-
-if awk 'substr($1, 1, 1) != "d" && substr($1, 1, 1) != "-" { found=1 } END { exit(found ? 0 : 1) }' "${DETAIL_LIST}"; then
-  fail "archive contains a link or special-file entry"
-fi
-if grep -Eq ' -> | link to ' "${DETAIL_LIST}"; then
-  fail "archive contains a symlink or hard link"
-fi
-
-EXTRACT_DIR="${WORK_DIR}/extract"
-mkdir -m 700 "${EXTRACT_DIR}"
-tar -xzf "${ARCHIVE}" -C "${EXTRACT_DIR}"
-APP_PATH="${EXTRACT_DIR}/LabTether Agent.app"
-[[ -d "${APP_PATH}" && ! -L "${APP_PATH}" ]] || fail "archive did not produce one regular app bundle"
-if find "${APP_PATH}" -type l -print -quit | grep -q .; then
-  fail "extracted app contains a symlink"
-fi
-if find "${APP_PATH}" -type f -links +1 -print -quit | grep -q .; then
-  fail "extracted app contains a hard-linked file"
-fi
-
-PROVENANCE="${APP_PATH}/Contents/Resources/release-provenance.json"
-[[ -f "${PROVENANCE}" && ! -L "${PROVENANCE}" ]] || fail "signed release provenance is missing"
-[[ "$(plutil -extract tag raw "${PROVENANCE}")" == "${TAG}" ]] || fail "release provenance tag mismatch"
-[[ "$(plutil -extract wrapper_commit raw "${PROVENANCE}")" == "${WRAPPER_COMMIT}" ]] || fail "release provenance wrapper commit mismatch"
-[[ "$(plutil -extract agent_commit raw "${PROVENANCE}")" == "${AGENT_COMMIT}" ]] || fail "release provenance agent commit mismatch"
-[[ "$(plutil -extract CFBundleShortVersionString raw "${APP_PATH}/Contents/Info.plist")" == "${TAG#v}" ]] || fail "app version does not match tag"
+mkdir -m 700 "${WORK_DIR}/list" "${WORK_DIR}/extract"
+check_app_archive_entries "${ARCHIVE}" "${WORK_DIR}/list"
+extract_app_archive "${ARCHIVE}" "${WORK_DIR}/extract"
+APP_PATH="${WORK_DIR}/extract/LabTether Agent.app"
+check_app_release_record "${APP_PATH}" "${TAG}" "${WRAPPER_COMMIT}" "${AGENT_COMMIT}"
 
 "${SCRIPT_DIR}/validate-app.sh" \
   "${APP_PATH}" \
@@ -147,7 +109,8 @@ done
 APP_TEAM_ID="$(printf '%s\n' "${APP_SIGNATURE_DETAILS}" | awk -F= '/^TeamIdentifier=/{ print $2; exit }')"
 HOST_TEAM_ID="$(printf '%s\n' "${HOST_SIGNATURE_DETAILS}" | awk -F= '/^TeamIdentifier=/{ print $2; exit }')"
 CHILD_TEAM_ID="$(printf '%s\n' "${CHILD_SIGNATURE_DETAILS}" | awk -F= '/^TeamIdentifier=/{ print $2; exit }')"
-[[ "${APP_TEAM_ID}" =~ ^[A-Z0-9]{10}$ ]] || fail "app Team Identifier is not a 10-character Apple team ID"
+[[ "${APP_TEAM_ID}" == "${RELEASE_TEAM_ID}" ]] \
+  || fail "release code is not signed by the Watari Labs team ${RELEASE_TEAM_ID}"
 [[ "${APP_TEAM_ID}" == "${HOST_TEAM_ID}" && "${APP_TEAM_ID}" == "${CHILD_TEAM_ID}" ]] \
   || fail "app, host, and child Team Identifiers do not match"
 

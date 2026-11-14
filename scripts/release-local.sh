@@ -5,8 +5,8 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd -P)"
-# shellcheck source=scripts/release-provenance.sh
-source "${SCRIPT_DIR}/release-provenance.sh"
+# shellcheck source=scripts/release-signing.sh
+source "${SCRIPT_DIR}/release-signing.sh"
 
 TAG=""
 BUILD_NUMBER=""
@@ -20,22 +20,15 @@ DRY_RUN=false
 TEMP_BASE=""
 TEMP_ROOT=""
 OUTPUT_DIR=""
-MOVED_OUTPUTS=()
 RELEASE_COMPLETE=false
-ARCHIVE_NAME="labtether-agent-macos-universal.tar.gz"
-CHECKSUM_NAME="${ARCHIVE_NAME}.sha256"
-DMG_NAME="labtether-agent-macos-universal.dmg"
-DMG_CHECKSUM_NAME="${DMG_NAME}.sha256"
+CODESIGN_KEYCHAIN_ARGS=()
+NOTARY_AUTH_ARGS=()
 
 cleanup() {
   unset SIGNING_IDENTITY NOTARY_PROFILE
   if [[ "${RELEASE_COMPLETE}" != "true" && -n "${OUTPUT_DIR}" \
     && -d "${OUTPUT_DIR}" && ! -L "${OUTPUT_DIR}" ]]; then
-    if [[ ${#MOVED_OUTPUTS[@]} -gt 0 ]]; then
-      for moved_output in "${MOVED_OUTPUTS[@]}"; do
-        rm -f -- "${OUTPUT_DIR}/${moved_output}"
-      done
-    fi
+    remove_placed_release_assets "${OUTPUT_DIR}"
   fi
   if [[ -n "${TEMP_ROOT}" && -n "${TEMP_BASE}" \
     && "${TEMP_ROOT}" == "${TEMP_BASE%/}/labtether-mac-release."* \
@@ -159,8 +152,8 @@ fi
 silent_prompt 'Developer ID Application selector: ' SIGNING_IDENTITY
 silent_prompt 'Notary Keychain profile: ' NOTARY_PROFILE
 case "${SIGNING_IDENTITY}" in
-  "Developer ID Application: "*) ;;
-  *) fail "the signing selector must choose a Developer ID Application identity" ;;
+  "Developer ID Application: "*" (${RELEASE_TEAM_ID})") ;;
+  *) fail "the signing selector must choose a Developer ID Application identity of team ${RELEASE_TEAM_ID}" ;;
 esac
 [[ "${NOTARY_PROFILE}" =~ ^[A-Za-z0-9._-]+$ ]] \
   || fail "the notary profile selector contains unsupported characters"
@@ -168,8 +161,11 @@ esac
 for command_name in codesign ditto find git go hdiutil lipo plutil security shasum spctl swift tar xattr xcrun; do
   command -v "${command_name}" >/dev/null 2>&1 || fail "a required local release command is unavailable"
 done
-[[ "$(go version)" == "go version go1.27.3 "* ]] \
-  || fail "local Go release builder must be go1.27.3"
+identity_count="$(
+  security find-identity -v -p codesigning 2>/dev/null \
+    | awk -v identity="${SIGNING_IDENTITY}" 'index($0, "\"" identity "\"") > 0 { count++ } END { print count + 0 }'
+)"
+[[ "${identity_count}" == "1" ]] || fail "the local signing selector must match exactly one valid identity"
 
 TEMP_BASE="$(cd "${TMPDIR:-/tmp}" && pwd -P)"
 if path_is_within "${TEMP_BASE}" "${REPO_ROOT}" || path_is_within "${TEMP_BASE}" "${AGENT_REPO}"; then
@@ -177,168 +173,35 @@ if path_is_within "${TEMP_BASE}" "${REPO_ROOT}" || path_is_within "${TEMP_BASE}"
 fi
 TEMP_ROOT="$(mktemp -d "${TEMP_BASE%/}/labtether-mac-release.XXXXXX")"
 chmod 700 "${TEMP_ROOT}"
-SWIFT_TEST_SCRATCH="${TEMP_ROOT}/swift-test"
-SWIFT_BUILD_SCRATCH="${TEMP_ROOT}/swift-release"
 STAGE_DIR="${TEMP_ROOT}/stage"
 NOTARY_DIR="${TEMP_ROOT}/notary"
-mkdir -m 700 "${SWIFT_TEST_SCRATCH}" "${SWIFT_BUILD_SCRATCH}" "${STAGE_DIR}" "${NOTARY_DIR}"
+ASSET_DIR="${TEMP_ROOT}/assets"
+mkdir -m 700 "${TEMP_ROOT}/unsigned" "${TEMP_ROOT}/list" "${STAGE_DIR}" "${NOTARY_DIR}" "${ASSET_DIR}"
 
-printf 'Running pinned source gates for %s.\n' "${TAG}"
-(
-  cd "${REPO_ROOT}"
-  swift test --scratch-path "${SWIFT_TEST_SCRATCH}"
-)
-(
-  cd "${AGENT_REPO}"
-  go test ./...
-  go test -race ./...
-  go vet ./...
-)
-repo_is_clean "${REPO_ROOT}" || fail "wrapper source changed during release gates"
-repo_is_clean "${AGENT_REPO}" || fail "agent source changed during release gates"
-repo_tagged_head "${REPO_ROOT}" || fail "wrapper tag moved during release gates"
-repo_tagged_head "${AGENT_REPO}" || fail "agent tag moved during release gates"
+# Tests, build and release record, the same step the GitHub build job runs.
+TMPDIR="${TEMP_ROOT}" "${SCRIPT_DIR}/prepare-unsigned-release.sh" \
+  --tag "${TAG}" --build-number "${BUILD_NUMBER}" \
+  --agent-repo "${AGENT_REPO}" --output-dir "${TEMP_ROOT}/unsigned"
+UNSIGNED_ARCHIVE="${TEMP_ROOT}/unsigned/labtether-agent-macos-unsigned-app.tar.gz"
+check_app_archive_entries "${UNSIGNED_ARCHIVE}" "${TEMP_ROOT}/list"
+extract_app_archive "${UNSIGNED_ARCHIVE}" "${STAGE_DIR}"
+check_app_release_record "${STAGE_DIR}/LabTether Agent.app" "${TAG}" "${WRAPPER_COMMIT}" "${AGENT_COMMIT}"
 
-LABTETHER_AGENT_REPO="${AGENT_REPO}" \
-LABTETHER_AGENT_VERSION="${TAG}" \
-LABTETHER_APP_VERSION="${TAG#v}" \
-LABTETHER_APP_BUILD_NUMBER="${BUILD_NUMBER}" \
-LABTETHER_SWIFT_SCRATCH_PATH="${SWIFT_BUILD_SCRATCH}" \
-  "${SCRIPT_DIR}/build-app.sh" \
-    --configuration release \
-    --universal \
-    --output-dir "${STAGE_DIR}" \
-    --no-sign
-
-APP_PATH="${STAGE_DIR}/LabTether Agent.app"
-CHILD_PATH="${APP_PATH}/Contents/Resources/labtether-agent"
-HOST_PATH="${APP_PATH}/Contents/MacOS/LabTetherAgent"
-PROVENANCE_PATH="${APP_PATH}/Contents/Resources/release-provenance.json"
-[[ -d "${APP_PATH}" && ! -L "${APP_PATH}" ]] || fail "build did not produce a regular app bundle"
-
-write_release_provenance "${PROVENANCE_PATH}" "${TAG}" "${WRAPPER_COMMIT}" "${AGENT_COMMIT}" "${TEMP_ROOT}" \
-  || fail "writing release provenance failed"
-chmod 0644 "${PROVENANCE_PATH}"
-xattr -cr "${APP_PATH}"
-
-identity_count="$(
-  security find-identity -v -p codesigning 2>/dev/null \
-    | awk -v identity="${SIGNING_IDENTITY}" 'index($0, "\"" identity "\"") > 0 { count++ } END { print count + 0 }'
-)"
-[[ "${identity_count}" == "1" ]] || fail "the local signing selector must match exactly one valid identity"
-
-if ! codesign --force --options runtime --timestamp --sign "${SIGNING_IDENTITY}" "${CHILD_PATH}" >/dev/null 2>&1; then
-  fail "signing the bundled agent failed"
-fi
-if ! codesign --force --options runtime --timestamp --sign "${SIGNING_IDENTITY}" "${HOST_PATH}" >/dev/null 2>&1; then
-  fail "signing the native host failed"
-fi
-if ! codesign --force --options runtime --timestamp --sign "${SIGNING_IDENTITY}" "${APP_PATH}" >/dev/null 2>&1; then
-  fail "signing the app bundle failed"
-fi
-if ! "${SCRIPT_DIR}/validate-app.sh" \
-  "${APP_PATH}" \
-  --architectures arm64,x86_64 \
-  --agent-version "${TAG}" \
-  --require-signature >/dev/null 2>&1; then
-  fail "strict signed app validation failed"
-fi
-
-NOTARY_ARCHIVE="${NOTARY_DIR}/submission.zip"
-NOTARY_RESULT="${NOTARY_DIR}/result.json"
-if ! ditto -c -k --keepParent "${APP_PATH}" "${NOTARY_ARCHIVE}" >/dev/null 2>&1; then
-  fail "creating the local notarization submission failed"
-fi
-if ! xcrun notarytool submit "${NOTARY_ARCHIVE}" \
-  --keychain-profile "${NOTARY_PROFILE}" \
-  --wait \
-  --output-format json >"${NOTARY_RESULT}" 2>/dev/null; then
-  fail "Apple notarization submission failed"
-fi
-notary_result_status="$(plutil -extract status raw "${NOTARY_RESULT}" 2>/dev/null || true)"
-[[ "${notary_result_status}" == "Accepted" ]] || fail "Apple notarization did not return Accepted"
-
-if ! xcrun stapler staple "${APP_PATH}" >/dev/null 2>&1; then
-  fail "stapling the notarization ticket failed"
-fi
-if ! xcrun stapler validate "${APP_PATH}" >/dev/null 2>&1; then
-  fail "the stapled notarization ticket did not validate"
-fi
-if ! codesign --verify --deep --strict --verbose=4 "${APP_PATH}" >/dev/null 2>&1; then
-  fail "the final signed app did not pass strict verification"
-fi
-if ! spctl --assess --type execute --verbose=4 "${APP_PATH}" >/dev/null 2>&1; then
-  fail "the final app did not pass Gatekeeper assessment"
-fi
-
-ARCHIVE_PATH="${TEMP_ROOT}/${ARCHIVE_NAME}"
-CHECKSUM_PATH="${TEMP_ROOT}/${CHECKSUM_NAME}"
-(
-  cd "${STAGE_DIR}"
-  COPYFILE_DISABLE=1 tar -czf "${ARCHIVE_PATH}" "LabTether Agent.app"
-)
-archive_hash="$(shasum -a 256 "${ARCHIVE_PATH}" | awk '{ print $1 }')"
-[[ "${archive_hash}" =~ ^[0-9a-f]{64}$ ]] || fail "could not calculate the final archive checksum"
-printf '%s  %s\n' "${archive_hash}" "${ARCHIVE_NAME}" >"${CHECKSUM_PATH}"
-chmod 0600 "${ARCHIVE_PATH}" "${CHECKSUM_PATH}"
-
-# The disk image holds the stapled app. It gets its own Developer ID
-# signature, notarization and stapled ticket, so it opens without a warning.
-DMG_PATH="${TEMP_ROOT}/${DMG_NAME}"
-DMG_CHECKSUM_PATH="${TEMP_ROOT}/${DMG_CHECKSUM_NAME}"
-DMG_NOTARY_RESULT="${NOTARY_DIR}/dmg-result.json"
-"${SCRIPT_DIR}/build-dmg.sh" --app "${APP_PATH}" --output "${DMG_PATH}" >/dev/null \
-  || fail "building the disk image failed"
-if ! codesign --force --timestamp --sign "${SIGNING_IDENTITY}" "${DMG_PATH}" >/dev/null 2>&1; then
-  fail "signing the disk image failed"
-fi
-unset SIGNING_IDENTITY
-if ! xcrun notarytool submit "${DMG_PATH}" \
-  --keychain-profile "${NOTARY_PROFILE}" \
-  --wait \
-  --output-format json >"${DMG_NOTARY_RESULT}" 2>/dev/null; then
-  fail "Apple notarization submission of the disk image failed"
-fi
-unset NOTARY_PROFILE
-dmg_notary_result_status="$(plutil -extract status raw "${DMG_NOTARY_RESULT}" 2>/dev/null || true)"
-[[ "${dmg_notary_result_status}" == "Accepted" ]] || fail "Apple notarization of the disk image did not return Accepted"
-if ! xcrun stapler staple "${DMG_PATH}" >/dev/null 2>&1; then
-  fail "stapling the notarization ticket to the disk image failed"
-fi
-dmg_hash="$(shasum -a 256 "${DMG_PATH}" | awk '{ print $1 }')"
-[[ "${dmg_hash}" =~ ^[0-9a-f]{64}$ ]] || fail "could not calculate the final disk image checksum"
-printf '%s  %s\n' "${dmg_hash}" "${DMG_NAME}" >"${DMG_CHECKSUM_PATH}"
-chmod 0600 "${DMG_PATH}" "${DMG_CHECKSUM_PATH}"
+NOTARY_AUTH_ARGS=(--keychain-profile "${NOTARY_PROFILE}")
+sign_and_package_release
+unset SIGNING_IDENTITY NOTARY_PROFILE
+NOTARY_AUTH_ARGS=()
 
 "${SCRIPT_DIR}/verify-release-archive.sh" \
-  --archive "${ARCHIVE_PATH}" \
-  --checksum "${CHECKSUM_PATH}" \
-  --dmg "${DMG_PATH}" \
-  --dmg-checksum "${DMG_CHECKSUM_PATH}" \
+  --archive "${ASSET_DIR}/${ARCHIVE_NAME}" \
+  --checksum "${ASSET_DIR}/${CHECKSUM_NAME}" \
+  --dmg "${ASSET_DIR}/${DMG_NAME}" \
+  --dmg-checksum "${ASSET_DIR}/${DMG_CHECKSUM_NAME}" \
   --tag "${TAG}" \
   --wrapper-commit "${WRAPPER_COMMIT}" \
   --agent-commit "${AGENT_COMMIT}"
 
-if find "${OUTPUT_DIR}" -mindepth 1 -maxdepth 1 -print -quit | grep -q .; then
-  fail "output directory changed before final placement"
-fi
-for output_name in "${ARCHIVE_NAME}" "${CHECKSUM_NAME}" "${DMG_NAME}" "${DMG_CHECKSUM_NAME}"; do
-  [[ ! -e "${OUTPUT_DIR}/${output_name}" && ! -L "${OUTPUT_DIR}/${output_name}" ]] \
-    || fail "a release asset destination already exists"
-done
-for output_name in "${ARCHIVE_NAME}" "${CHECKSUM_NAME}" "${DMG_NAME}" "${DMG_CHECKSUM_NAME}"; do
-  mv -n -- "${TEMP_ROOT}/${output_name}" "${OUTPUT_DIR}/${output_name}"
-  [[ ! -e "${TEMP_ROOT}/${output_name}" && -f "${OUTPUT_DIR}/${output_name}" && ! -L "${OUTPUT_DIR}/${output_name}" ]] \
-    || fail "release asset placement did not complete without overwrite"
-  MOVED_OUTPUTS+=("${output_name}")
-done
-[[ "$(shasum -a 256 "${OUTPUT_DIR}/${ARCHIVE_NAME}" | awk '{ print $1 }')" == "${archive_hash}" ]] \
-  || fail "placed release archive changed unexpectedly"
-[[ "$(shasum -a 256 "${OUTPUT_DIR}/${DMG_NAME}" | awk '{ print $1 }')" == "${dmg_hash}" ]] \
-  || fail "placed release disk image changed unexpectedly"
-for output_name in "${ARCHIVE_NAME}" "${CHECKSUM_NAME}" "${DMG_NAME}" "${DMG_CHECKSUM_NAME}"; do
-  chmod 0644 "${OUTPUT_DIR}/${output_name}"
-done
+place_release_assets "${ASSET_DIR}" "${OUTPUT_DIR}"
 RELEASE_COMPLETE=true
 
 printf 'Prepared exactly four verified local release assets for %s. Nothing was published.\n' "${TAG}"

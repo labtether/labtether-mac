@@ -11,24 +11,30 @@ LOCAL_READBACK="${SCRIPT_DIR}/release-readback-common.sh"
 LOCAL_PROVENANCE="${SCRIPT_DIR}/release-provenance.sh"
 LOCAL_BUILD_DMG="${SCRIPT_DIR}/build-dmg.sh"
 LOCAL_VERIFY_DMG="${SCRIPT_DIR}/verify-release-dmg.sh"
+PREPARE_UNSIGNED="${SCRIPT_DIR}/prepare-unsigned-release.sh"
+SIGNING_COMMON="${SCRIPT_DIR}/release-signing.sh"
+CI_SIGN="${SCRIPT_DIR}/sign-release-ci.sh"
+SIGNED_WORKFLOW="${REPO_ROOT}/.github/workflows/signed-release.yml"
 
 fail() {
   printf 'release policy check failed: %s\n' "$1" >&2
   exit 1
 }
 
-for script_path in "${LOCAL_PREPARE}" "${LOCAL_PUBLISH}" "${LOCAL_VERIFY}" "${LOCAL_READBACK}" "${LOCAL_PROVENANCE}" "${LOCAL_BUILD_DMG}" "${LOCAL_VERIFY_DMG}" "${BASH_SOURCE[0]}"; do
+for script_path in "${LOCAL_PREPARE}" "${LOCAL_PUBLISH}" "${LOCAL_VERIFY}" "${LOCAL_READBACK}" "${LOCAL_PROVENANCE}" "${LOCAL_BUILD_DMG}" "${LOCAL_VERIFY_DMG}" "${PREPARE_UNSIGNED}" "${SIGNING_COMMON}" "${CI_SIGN}" "${BASH_SOURCE[0]}"; do
   bash -n "${script_path}" || fail "a release script has invalid shell syntax"
 done
 
 # A traced invocation must stop tracing before handling private signing inputs.
 # Use a synthetic argument and --help so no credential, build or signing runs.
 trace_fixture="synthetic-private-selector-for-trace-check"
-trace_output="$(bash -x "${LOCAL_PREPARE}" --tag "${trace_fixture}" --help 2>&1)" \
-  || fail "traced help invocation failed"
-if [[ "${trace_output}" == *"${trace_fixture}"* ]]; then
-  fail "local signing preparation leaks arguments through shell tracing"
-fi
+for traced_script in "${LOCAL_PREPARE}" "${CI_SIGN}"; do
+  trace_output="$(bash -x "${traced_script}" --tag "${trace_fixture}" --help 2>&1)" \
+    || fail "traced help invocation failed"
+  if [[ "${trace_output}" == *"${trace_fixture}"* ]]; then
+    fail "a signing script leaks arguments through shell tracing"
+  fi
+done
 
 grep -Eq '^[[:space:]]+contents:[[:space:]]+read[[:space:]]*$' "${WORKFLOW}" \
   || fail "tag verification workflow must have read-only contents permission"
@@ -56,27 +62,40 @@ if grep -Eiq 'secrets\.|contents:[[:space:]]*write|id-token:|attestations:|artif
 fi
 
 if grep -Eiq 'secrets\.|base64|security[[:space:]]+(import|create-keychain|delete-keychain)' \
-  "${LOCAL_PREPARE}" "${LOCAL_PUBLISH}" "${LOCAL_VERIFY}" "${LOCAL_BUILD_DMG}" "${LOCAL_VERIFY_DMG}"; then
+  "${LOCAL_PREPARE}" "${LOCAL_PUBLISH}" "${LOCAL_VERIFY}" "${LOCAL_BUILD_DMG}" "${LOCAL_VERIFY_DMG}" \
+  "${PREPARE_UNSIGNED}" "${SIGNING_COMMON}"; then
   fail "local release scripts contain forbidden certificate ingestion or hosted-secret behavior"
 fi
 
-for required_prepare_text in \
-  'go test ./...' \
-  'go test -race ./...' \
-  'go vet ./...' \
-  'swift test --scratch-path' \
-  'release-provenance.json' \
-  'notarytool submit' \
-  'stapler staple' \
-  'spctl --assess' \
-  'verify-release-archive.sh' \
-  'build-dmg.sh' \
-  '--dmg-checksum' \
-  'repo_has_forbidden_release_input' \
-  'mv -n --'; do
-  grep -Fq -- "${required_prepare_text}" "${LOCAL_PREPARE}" \
-    || fail "local preparation is missing a required release gate"
+for required_unsigned_text in 'go test ./...' 'go test -race ./...' 'go vet ./...' \
+  'swift test --scratch-path' 'write_release_provenance' 'repo_has_forbidden_release_input' \
+  '--no-sign'; do
+  grep -Fq -- "${required_unsigned_text}" "${PREPARE_UNSIGNED}" \
+    || fail "unsigned preparation is missing a required release gate"
 done
+for required_signing_text in 'notarytool submit' 'stapler staple' 'stapler validate' 'spctl --assess' \
+  'build-dmg.sh' '--options runtime' 'mv -n --'; do
+  grep -Fq -- "${required_signing_text}" "${SIGNING_COMMON}" \
+    || fail "shared signing steps are missing a required release gate"
+done
+for signer_script in "${LOCAL_PREPARE}" "${CI_SIGN}"; do
+  for required_signer_text in 'sign_and_package_release' 'verify-release-archive.sh' '--dmg-checksum' \
+    'check_app_release_record' 'place_release_assets' 'RELEASE_TEAM_ID'; do
+    grep -Fq -- "${required_signer_text}" "${signer_script}" \
+      || fail "a signing script is missing a required release gate"
+  done
+done
+grep -Fq 'prepare-unsigned-release.sh' "${LOCAL_PREPARE}" \
+  || fail "local preparation must use the shared unsigned build"
+grep -Fq 'repo_has_forbidden_release_input' "${LOCAL_PREPARE}" \
+  || fail "local preparation must reject tracked symlinks and certificate/key files"
+
+# Releases are signed by one Apple team only: Watari Labs Pty Ltd.
+grep -Eq '^RELEASE_TEAM_ID="D2WZW3YTL6"$' "${SIGNING_COMMON}" \
+  || fail "the release team must be pinned to D2WZW3YTL6"
+# shellcheck disable=SC2016
+grep -Fq '[[ "${APP_TEAM_ID}" == "${RELEASE_TEAM_ID}" ]]' "${LOCAL_VERIFY}" \
+  || fail "release verification must require the pinned team"
 
 if grep -Eq -- '--signing-identity|--notary-profile' "${LOCAL_PREPARE}"; then
   fail "real-run signing and notary selectors must be read silently instead of passed in process arguments"
@@ -121,6 +140,47 @@ grep -Fq 'verify-release-dmg.sh' "${LOCAL_VERIFY}" \
   || fail "release verification must check the disk image against the verified app"
 grep -Fq -- '--require-notarized' "${LOCAL_VERIFY}" \
   || fail "release verification must require a notarized disk image"
+
+# The hosted signer: started by hand from main, secrets only in the sign job
+# through the protected environment, write access only in the draft job.
+if ! grep -Eq '^on:$' "${SIGNED_WORKFLOW}" || ! grep -Eq '^  workflow_dispatch:$' "${SIGNED_WORKFLOW}"; then
+  fail "the signed workflow must start by hand"
+fi
+if grep -Eq '^  (push|pull_request|pull_request_target|schedule|workflow_run|repository_dispatch):' "${SIGNED_WORKFLOW}"; then
+  fail "the signed workflow must not start on any event but workflow_dispatch"
+fi
+# shellcheck disable=SC2016 # a literal workflow line
+grep -Fq '[[ "$GITHUB_REF" == "refs/heads/main" ]]' "${SIGNED_WORKFLOW}" \
+  || fail "the signed workflow must refuse refs other than main"
+sign_job_line="$(grep -n '^  sign:$' "${SIGNED_WORKFLOW}" | cut -d: -f1)"
+draft_job_line="$(grep -n '^  draft:$' "${SIGNED_WORKFLOW}" | cut -d: -f1)"
+[[ -n "${sign_job_line}" && -n "${draft_job_line}" ]] || fail "the signed workflow must have sign and draft jobs"
+while IFS=: read -r line_number line_text; do
+  (( line_number > sign_job_line && line_number < draft_job_line )) \
+    || fail "a secret is used outside the sign job"
+  [[ "${line_text}" =~ secrets\.MAC_(SIGNING_P12_BASE64|SIGNING_P12_PASSWORD|NOTARY_KEY|NOTARY_KEY_ID|NOTARY_ISSUER_ID)\ \}\}$ ]] \
+    || fail "the sign job reads an unexpected secret"
+done < <(grep -n 'secrets\.' "${SIGNED_WORKFLOW}")
+[[ "$(grep -c '^    environment: mac-release-signing$' "${SIGNED_WORKFLOW}")" == "1" ]] \
+  || fail "only the sign job may use the signing environment"
+environment_line="$(grep -n '^    environment: mac-release-signing$' "${SIGNED_WORKFLOW}" | cut -d: -f1)"
+(( environment_line > sign_job_line && environment_line < draft_job_line )) \
+  || fail "the signing environment belongs to the sign job"
+write_lines="$(grep -n 'contents: write' "${SIGNED_WORKFLOW}" | cut -d: -f1)"
+if [[ "$(grep -c . <<<"${write_lines}")" != "1" ]] || (( write_lines < draft_job_line )); then
+  fail "only the draft job may write to the repository"
+fi
+if grep -Eq 'id-token:|gh[[:space:]]+release[[:space:]]+edit|--confirm-publish|action-gh-release' "${SIGNED_WORKFLOW}"; then
+  fail "the signed workflow must stop at a draft"
+fi
+grep -Fq 'scripts/sign-release-ci.sh' "${SIGNED_WORKFLOW}" || fail "the sign job must use sign-release-ci.sh"
+grep -Fq -- '--confirm-draft' "${SIGNED_WORKFLOW}" || fail "the draft job must use the draft confirmation"
+if grep -Eq 'secrets\.' "${CI_SIGN}"; then
+  fail "the hosted signer must get secrets from its environment only"
+fi
+for required_ci_text in 'delete-keychain' 'GITHUB_ACTIONS' 'DeveloperIDCA.cer' 'DeveloperIDG2CA.cer'; do
+  grep -Fq -- "${required_ci_text}" "${CI_SIGN}" || fail "the hosted signer is missing a required safety step"
+done
 
 TAG="v1.2.3"
 ARCHIVE_NAME="labtether-agent-macos-universal.tar.gz"

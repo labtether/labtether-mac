@@ -1,0 +1,212 @@
+name: Signed macOS release
+
+# Builds, signs as Watari Labs Pty Ltd, notarizes and checks the macOS
+# release, then leaves a draft GitHub release for a maintainer to inspect and
+# publish. Started by hand only; it never publishes.
+#
+# The build job runs the tests and builds the unsigned app; no secret reaches
+# it. Only the sign job uses the mac-release-signing environment, which
+# admits main only. Its five secrets reach scripts/sign-release-ci.sh and
+# nothing else; the identity lives in a temporary keychain deleted at the end.
+#
+# mode "proof" signs and notarizes main as a test and keeps nothing: no
+# artifact, no release. mode "release" signs the exact tags and makes a draft.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, for example v2.0.1 (in proof mode, the version to stamp)"
+        required: true
+        type: string
+      confirm:
+        description: "Type the tag again to confirm signing"
+        required: true
+        type: string
+      mode:
+        description: "proof: sign main, keep nothing. release: sign the tags, make a draft."
+        required: true
+        type: choice
+        options:
+          - proof
+          - release
+        default: proof
+
+permissions:
+  contents: read
+
+concurrency:
+  group: signed-macos-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ inputs.tag }}
+  CONFIRM: ${{ inputs.confirm }}
+  MODE: ${{ inputs.mode }}
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - name: Check the inputs
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # Only the workflow on main may sign; the signing environment also
+          # admits main only, so a copy edited on another branch is refused.
+          [[ "$GITHUB_REF" == "refs/heads/main" ]] || { echo "::error::signed releases run only from main"; exit 1; }
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::tag must look like v1.2.3"; exit 1; }
+          [[ "$CONFIRM" == "$TAG" ]] || { echo "::error::confirm must repeat the tag"; exit 1; }
+          [[ "$MODE" == proof || "$MODE" == release ]] || { echo "::error::mode must be proof or release"; exit 1; }
+
+      - name: Check out labtether-mac
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.mode == 'release' && format('refs/tags/{0}', inputs.tag) || github.sha }}
+          path: wrapper
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Check out labtether-agent
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: labtether/labtether-agent
+          ref: ${{ inputs.mode == 'release' && format('refs/tags/{0}', inputs.tag) || 'main' }}
+          path: agent
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.3"
+          cache: false
+
+      - name: Check the release scripts
+        run: wrapper/scripts/test-release-policy.sh
+
+      - name: Test and build the unsigned app
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          IFS=. read -r major minor patch <<<"${TAG#v}"
+          build_number=$((major * 10000 + minor * 100 + patch))
+          proof=()
+          [[ "$MODE" == proof ]] && proof=(--untagged-proof)
+          mkdir -p "$RUNNER_TEMP/unsigned"
+          TMPDIR="$RUNNER_TEMP" wrapper/scripts/prepare-unsigned-release.sh \
+            --tag "$TAG" --build-number "$build_number" --agent-repo agent \
+            --output-dir "$RUNNER_TEMP/unsigned" ${proof[@]+"${proof[@]}"}
+          (cd "$RUNNER_TEMP/unsigned" && shasum -a 256 labtether-agent-macos-unsigned-app.tar.gz)
+
+      - name: Keep the unsigned app for this run
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: unsigned-app
+          path: ${{ runner.temp }}/unsigned/labtether-agent-macos-unsigned-app.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  sign:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-26
+    timeout-minutes: 90
+    environment: mac-release-signing
+    steps:
+      - name: Check out labtether-mac
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.mode == 'release' && format('refs/tags/{0}', inputs.tag) || github.sha }}
+          path: wrapper
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Check out labtether-agent
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: labtether/labtether-agent
+          ref: ${{ inputs.mode == 'release' && format('refs/tags/{0}', inputs.tag) || 'main' }}
+          path: agent
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Get the unsigned app
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: unsigned-app
+          path: ${{ runner.temp }}/in
+
+      - name: Sign, notarize and check
+        shell: bash
+        env:
+          MAC_SIGNING_P12_BASE64: ${{ secrets.MAC_SIGNING_P12_BASE64 }}
+          MAC_SIGNING_P12_PASSWORD: ${{ secrets.MAC_SIGNING_P12_PASSWORD }}
+          MAC_NOTARY_KEY: ${{ secrets.MAC_NOTARY_KEY }}
+          MAC_NOTARY_KEY_ID: ${{ secrets.MAC_NOTARY_KEY_ID }}
+          MAC_NOTARY_ISSUER_ID: ${{ secrets.MAC_NOTARY_ISSUER_ID }}
+        run: |
+          set -Eeuo pipefail
+          proof=()
+          [[ "$MODE" == proof ]] && proof=(--untagged-proof)
+          mkdir -p "$RUNNER_TEMP/release-assets"
+          TMPDIR="$RUNNER_TEMP" wrapper/scripts/sign-release-ci.sh \
+            --tag "$TAG" \
+            --unsigned-app "$RUNNER_TEMP/in/labtether-agent-macos-unsigned-app.tar.gz" \
+            --agent-repo agent --output-dir "$RUNNER_TEMP/release-assets" \
+            --confirm-sign "$CONFIRM" ${proof[@]+"${proof[@]}"}
+          (cd "$RUNNER_TEMP/release-assets" && shasum -a 256 -- *)
+
+      - name: Keep the signed assets for the draft
+        if: inputs.mode == 'release'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-assets
+          path: ${{ runner.temp }}/release-assets/
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  draft:
+    # A draft release with exactly the four checked assets. Publishing stays a
+    # maintainer's click on GitHub.
+    needs: sign
+    if: inputs.mode == 'release'
+    runs-on: macos-26
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the labtether-mac tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          path: wrapper
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Check out the labtether-agent tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: labtether/labtether-agent
+          ref: refs/tags/${{ inputs.tag }}
+          path: agent
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Get the signed assets
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-assets
+          path: ${{ runner.temp }}/release-assets
+
+      - name: Create and check the draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          TMPDIR="$RUNNER_TEMP" wrapper/scripts/publish-local-release.sh \
+            --tag "$TAG" --agent-repo agent \
+            --release-dir "$RUNNER_TEMP/release-assets" \
+            --confirm-draft "$CONFIRM"
