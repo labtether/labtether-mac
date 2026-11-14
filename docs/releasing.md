@@ -13,6 +13,11 @@ The release scripts refuse any other Apple team (`RELEASE_TEAM_ID` in
 | `sign` | the five below, through the `mac-release-signing` environment | Signs the app, has Apple notarize it, staples the ticket, builds the disk image, signs and notarizes that too, then checks all four files (`scripts/sign-release-ci.sh`) |
 | `draft` | none, `contents: write` only | Re-checks the four files and the tags, then creates a draft with exactly those files (`scripts/publish-local-release.sh --confirm-draft`) |
 
+Each job first checks that both commits are on `main`, the branch the signing
+environment admits, before it runs any script from them. The bundled agent is
+started only in `build`, which checks its version; `sign` and `draft` hold a
+key or a write token, so they check the files without starting anything.
+
 The release files:
 
 - `labtether-agent-macos-universal.dmg` and `.dmg.sha256`, the download people use

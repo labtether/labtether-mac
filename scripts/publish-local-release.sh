@@ -187,7 +187,8 @@ TMPDIR="${TEMP_BASE}" "${SCRIPT_DIR}/verify-release-archive.sh" \
   --dmg-checksum "${DMG_CHECKSUM_PATH}" \
   --tag "${TAG}" \
   --wrapper-commit "${WRAPPER_COMMIT}" \
-  --agent-commit "${AGENT_COMMIT}"
+  --agent-commit "${AGENT_COMMIT}" \
+  --no-run
 
 if ! gh auth status --hostname github.com >/dev/null 2>&1; then
   fail "the local GitHub CLI is not authenticated"

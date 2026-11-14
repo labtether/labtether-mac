@@ -12,6 +12,7 @@ DMG_CHECKSUM=""
 TAG=""
 WRAPPER_COMMIT=""
 AGENT_COMMIT=""
+VALIDATE_RUN_ARGS=()
 TEMP_BASE=""
 WORK_DIR=""
 
@@ -33,7 +34,8 @@ usage() {
   printf '%s\n' \
     'Usage: scripts/verify-release-archive.sh --archive PATH --checksum PATH' \
     '       --dmg PATH --dmg-checksum PATH' \
-    '       --tag vX.Y.Z --wrapper-commit SHA --agent-commit SHA' >&2
+    '       --tag vX.Y.Z --wrapper-commit SHA --agent-commit SHA [--no-run]' \
+    '--no-run checks the files without starting the bundled agent.' >&2
 }
 
 while [[ $# -gt 0 ]]; do
@@ -45,6 +47,7 @@ while [[ $# -gt 0 ]]; do
     --tag) TAG="${2:?--tag requires a value}"; shift 2 ;;
     --wrapper-commit) WRAPPER_COMMIT="${2:?--wrapper-commit requires a value}"; shift 2 ;;
     --agent-commit) AGENT_COMMIT="${2:?--agent-commit requires a value}"; shift 2 ;;
+    --no-run) VALIDATE_RUN_ARGS=(--no-run); shift ;;
     -h|--help) usage; exit 0 ;;
     *) usage; exit 2 ;;
   esac
@@ -88,7 +91,8 @@ check_app_release_record "${APP_PATH}" "${TAG}" "${WRAPPER_COMMIT}" "${AGENT_COM
   "${APP_PATH}" \
   --architectures arm64,x86_64 \
   --agent-version "${TAG}" \
-  --require-signature >/dev/null 2>&1 || fail "strict app validation failed"
+  --require-signature ${VALIDATE_RUN_ARGS[@]+"${VALIDATE_RUN_ARGS[@]}"} >/dev/null 2>&1 \
+  || fail "strict app validation failed"
 
 APP_SIGNATURE_DETAILS="$(codesign -dvvv "${APP_PATH}" 2>&1)" \
   || fail "app signature metadata could not be read"

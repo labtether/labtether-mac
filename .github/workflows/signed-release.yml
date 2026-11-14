@@ -8,6 +8,8 @@ name: Signed macOS release
 # it. Only the sign job uses the mac-release-signing environment, which
 # admits main only. Its five secrets reach scripts/sign-release-ci.sh and
 # nothing else; the identity lives in a temporary keychain deleted at the end.
+# Every job refuses commits that are not on main before running their scripts,
+# and no job that holds a secret or a write token starts the app.
 #
 # mode "proof" signs and notarizes main as a test and keeps nothing: no
 # artifact, no release. mode "release" signs the exact tags and makes a draft.
@@ -76,6 +78,18 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
+      - name: Check both commits are on main
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # Scripts from these checkouts run next, so both commits must be on
+          # main, the branch the signing environment protects.
+          for repo in wrapper agent; do
+            git -C "$repo" fetch --quiet --no-tags origin main
+            git -C "$repo" merge-base --is-ancestor HEAD FETCH_HEAD \
+              || { echo "::error::$repo at $TAG is not on main"; exit 1; }
+          done
+
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.27.3"
@@ -130,6 +144,18 @@ jobs:
           path: agent
           persist-credentials: false
           fetch-depth: 0
+
+      - name: Check both commits are on main
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # Scripts from these checkouts run next, so both commits must be on
+          # main, the branch the signing environment protects.
+          for repo in wrapper agent; do
+            git -C "$repo" fetch --quiet --no-tags origin main
+            git -C "$repo" merge-base --is-ancestor HEAD FETCH_HEAD \
+              || { echo "::error::$repo at $TAG is not on main"; exit 1; }
+          done
 
       - name: Get the unsigned app
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -193,6 +219,18 @@ jobs:
           path: agent
           persist-credentials: false
           fetch-depth: 0
+
+      - name: Check both commits are on main
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # Scripts from these checkouts run next, so both commits must be on
+          # main, the branch the signing environment protects.
+          for repo in wrapper agent; do
+            git -C "$repo" fetch --quiet --no-tags origin main
+            git -C "$repo" merge-base --is-ancestor HEAD FETCH_HEAD \
+              || { echo "::error::$repo at $TAG is not on main"; exit 1; }
+          done
 
       - name: Get the signed assets
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2

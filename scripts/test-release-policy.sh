@@ -182,6 +182,35 @@ for required_ci_text in 'delete-keychain' 'GITHUB_ACTIONS' 'DeveloperIDCA.cer' '
   grep -Fq -- "${required_ci_text}" "${CI_SIGN}" || fail "the hosted signer is missing a required safety step"
 done
 
+# Code from the app never runs where a signing key or a write token exists:
+# the sign and draft steps check files only; the build job runs the agent.
+grep -Fq -- '--require-signature --no-run' "${SIGNING_COMMON}" \
+  || fail "signing must check the app without starting it"
+for no_run_script in "${CI_SIGN}" "${LOCAL_PUBLISH}"; do
+  grep -Eq '^  --no-run$' "${no_run_script}" \
+    || fail "a step that holds a secret or token must verify without starting the app"
+done
+cleanup_line="$(grep -n '^remove_signing_material$' "${CI_SIGN}" | cut -d: -f1)"
+verify_line="$(grep -n 'verify-release-archive.sh' "${CI_SIGN}" | tail -n 1 | cut -d: -f1)"
+if [[ -z "${cleanup_line}" || -z "${verify_line}" ]] || (( cleanup_line > verify_line )); then
+  fail "the hosted signer must delete the keychain and key before the final check"
+fi
+# shellcheck disable=SC2016 # a literal script line
+grep -Fq 'env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin "${CHILD_BINARY}" help' "${SCRIPT_DIR}/validate-app.sh" \
+  || fail "the bundled agent must start with an empty environment"
+# Every job checks its commits are on main before it runs any checked-out script.
+[[ "$(grep -c 'merge-base --is-ancestor HEAD FETCH_HEAD' "${SIGNED_WORKFLOW}")" == "3" ]] \
+  || fail "each signed workflow job must check its commits are on main"
+first_secret_line="$(grep -n 'secrets\.' "${SIGNED_WORKFLOW}" | head -n 1 | cut -d: -f1)"
+draft_step_line="$(grep -n -- '--confirm-draft' "${SIGNED_WORKFLOW}" | cut -d: -f1)"
+while IFS= read -r main_check_line; do
+  if (( main_check_line > sign_job_line && main_check_line < draft_job_line )); then
+    (( main_check_line < first_secret_line )) || fail "the sign job must check main before it reads secrets"
+  elif (( main_check_line > draft_job_line )); then
+    (( main_check_line < draft_step_line )) || fail "the draft job must check main before it writes"
+  fi
+done < <(grep -n 'merge-base --is-ancestor HEAD FETCH_HEAD' "${SIGNED_WORKFLOW}" | cut -d: -f1)
+
 TAG="v1.2.3"
 ARCHIVE_NAME="labtether-agent-macos-universal.tar.gz"
 CHECKSUM_NAME="${ARCHIVE_NAME}.sha256"

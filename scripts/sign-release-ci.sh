@@ -13,7 +13,8 @@ set -Eeuo pipefail
 #   MAC_NOTARY_KEY_ID         that key's ID
 #   MAC_NOTARY_ISSUER_ID      its issuer ID
 # The identity goes into a temporary keychain that is deleted on every exit,
-# and it must belong to the Watari Labs team in release-signing.sh.
+# and it must belong to the Watari Labs team in release-signing.sh. Nothing
+# from the app is started here; the build job ran the bundled agent.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd -P)"
@@ -42,14 +43,26 @@ SIGNING_IDENTITY=""
 CODESIGN_KEYCHAIN_ARGS=()
 NOTARY_AUTH_ARGS=()
 
-cleanup() {
+# Deletes the temporary keychain and the notary key file and restores the
+# keychain search list. Safe to call more than once.
+remove_signing_material() {
   unset MAC_SIGNING_P12_BASE64 MAC_SIGNING_P12_PASSWORD MAC_NOTARY_KEY MAC_NOTARY_KEY_ID MAC_NOTARY_ISSUER_ID
   if [[ -n "${KEYCHAIN}" ]]; then
     if [[ ${#ORIGINAL_KEYCHAINS[@]} -gt 0 ]]; then
       security list-keychains -d user -s "${ORIGINAL_KEYCHAINS[@]}" >/dev/null 2>&1 || true
     fi
     security delete-keychain "${KEYCHAIN}" >/dev/null 2>&1 || true
+    KEYCHAIN=""
   fi
+  if [[ -n "${TEMP_ROOT}" ]]; then
+    rm -f -- "${TEMP_ROOT}/identity.p12" "${TEMP_ROOT}/notary-key.p8"
+  fi
+  NOTARY_AUTH_ARGS=()
+  CODESIGN_KEYCHAIN_ARGS=()
+}
+
+cleanup() {
+  remove_signing_material
   if [[ "${RELEASE_COMPLETE}" != "true" && -n "${OUTPUT_DIR}" && -d "${OUTPUT_DIR}" ]]; then
     remove_placed_release_assets "${OUTPUT_DIR}"
   fi
@@ -191,9 +204,10 @@ NOTARY_AUTH_ARGS=(--key "${notary_key_path}" --key-id "${MAC_NOTARY_KEY_ID}" --i
 unset MAC_NOTARY_KEY
 
 sign_and_package_release
-rm -f -- "${notary_key_path}"
-NOTARY_AUTH_ARGS=()
+remove_signing_material
 
+# The app is checked without starting it: this process was started with the
+# signing secrets in its environment. The build job already ran the agent.
 "${SCRIPT_DIR}/verify-release-archive.sh" \
   --archive "${ASSET_DIR}/${ARCHIVE_NAME}" \
   --checksum "${ASSET_DIR}/${CHECKSUM_NAME}" \
@@ -201,7 +215,8 @@ NOTARY_AUTH_ARGS=()
   --dmg-checksum "${ASSET_DIR}/${DMG_CHECKSUM_NAME}" \
   --tag "${TAG}" \
   --wrapper-commit "${WRAPPER_COMMIT}" \
-  --agent-commit "${AGENT_COMMIT}"
+  --agent-commit "${AGENT_COMMIT}" \
+  --no-run
 
 place_release_assets "${ASSET_DIR}" "${OUTPUT_DIR}"
 RELEASE_COMPLETE=true

@@ -121,8 +121,10 @@ sign_and_package_release() {
   codesign_release_item --options runtime "${app}/Contents/MacOS/LabTetherAgent" \
     || fail "signing the native host failed"
   codesign_release_item --options runtime "${app}" || fail "signing the app bundle failed"
+  # --no-run: the signing key is usable here, so the app's code never runs.
+  # The build step already ran the bundled agent and checked its version.
   "${SCRIPT_DIR}/validate-app.sh" "${app}" --architectures arm64,x86_64 \
-    --agent-version "${TAG}" --require-signature >/dev/null 2>&1 \
+    --require-signature --no-run >/dev/null 2>&1 \
     || fail "strict signed app validation failed"
 
   ditto -c -k --keepParent "${app}" "${NOTARY_DIR}/submission.zip" >/dev/null 2>&1 \
