@@ -6,9 +6,11 @@ shift || true
 ARCHITECTURES=""
 AGENT_VERSION=""
 REQUIRE_SIGNATURE=false
+RUN_CHILD=true
 
 usage() {
-  echo "Usage: scripts/validate-app.sh <LabTether Agent.app> [--architectures arm64,x86_64] [--agent-version VERSION] [--require-signature]" >&2
+  echo "Usage: scripts/validate-app.sh <LabTether Agent.app> [--architectures arm64,x86_64] [--agent-version VERSION] [--require-signature] [--no-run]" >&2
+  echo "--no-run checks the files without starting the bundled agent; use it wherever a secret is present." >&2
 }
 
 while [[ $# -gt 0 ]]; do
@@ -23,6 +25,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --require-signature)
       REQUIRE_SIGNATURE=true
+      shift
+      ;;
+    --no-run)
+      RUN_CHILD=false
       shift
       ;;
     *)
@@ -62,17 +68,20 @@ plutil -lint "${INFO_PLIST}" >/dev/null
 [[ -d "${RESOURCE_BUNDLE}" ]] || { echo "missing SwiftPM resource bundle" >&2; exit 1; }
 [[ -f "${APP_ICON}" ]] || { echo "missing application icon" >&2; exit 1; }
 
-help_output="$("${CHILD_BINARY}" help 2>&1)"
-[[ "${help_output}" == labtether-agent* ]] || {
-  echo "bundled child agent did not return LabTether help" >&2
-  exit 1
-}
-if [[ -n "${AGENT_VERSION}" ]]; then
-  first_help_line="${help_output%%$'\n'*}"
-  [[ "${first_help_line}" == "labtether-agent ${AGENT_VERSION}" ]] || {
-    echo "bundled child version mismatch: expected ${AGENT_VERSION}, got ${first_help_line}" >&2
+if [[ "${RUN_CHILD}" == "true" ]]; then
+  # An empty environment, so the child never sees a caller's token or key.
+  help_output="$(env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin "${CHILD_BINARY}" help 2>&1)"
+  [[ "${help_output}" == labtether-agent* ]] || {
+    echo "bundled child agent did not return LabTether help" >&2
     exit 1
   }
+  if [[ -n "${AGENT_VERSION}" ]]; then
+    first_help_line="${help_output%%$'\n'*}"
+    [[ "${first_help_line}" == "labtether-agent ${AGENT_VERSION}" ]] || {
+      echo "bundled child version mismatch: expected ${AGENT_VERSION}, got ${first_help_line}" >&2
+      exit 1
+    }
+  fi
 fi
 
 if [[ -n "${ARCHITECTURES}" ]]; then

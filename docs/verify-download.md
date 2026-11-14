@@ -26,6 +26,7 @@ xcrun stapler validate labtether-agent-macos-universal.dmg
 spctl --assess --type open --context context:primary-signature --verbose=4 labtether-agent-macos-universal.dmg
 hdiutil attach -readonly -nobrowse labtether-agent-macos-universal.dmg
 codesign --verify --deep --strict --verbose=2 "/Volumes/LabTether Agent/LabTether Agent.app"
+codesign -dv --verbose=2 "/Volumes/LabTether Agent/LabTether Agent.app" 2>&1 | grep -E '^(Authority=Developer ID Application|TeamIdentifier)'
 spctl --assess --type execute --verbose=4 "/Volumes/LabTether Agent/LabTether Agent.app"
 hdiutil detach "/Volumes/LabTether Agent"
 ```
@@ -34,7 +35,8 @@ hdiutil detach "/Volumes/LabTether Agent"
 |---|---|
 | `stapler` | Apple's notarization ticket is attached to the disk image |
 | `spctl`, first | Gatekeeper accepts the disk image |
-| `codesign` | The app and everything inside it is signed and unchanged |
+| `codesign --verify` | The app and everything inside it is signed and unchanged |
+| `codesign -dv` | The signer is `Developer ID Application: Watari Labs Pty Ltd (D2WZW3YTL6)` and `TeamIdentifier=D2WZW3YTL6` |
 | `spctl`, second | Gatekeeper will let the app run |
 
 If every command passes, open the disk image and drag **LabTether Agent** to
