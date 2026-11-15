@@ -57,7 +57,7 @@ final class AgentHeroPresentationTests: XCTestCase {
         ), .error)
     }
 
-    func testResolvePrefersAuthFailureOverWrapperConnectedState() {
+    func testResolvePrefersLocalRefusalOverWrapperConnectedState() {
         let presentation = AgentHeroPresentation.resolve(
             processIsRunning: true,
             processIsStarting: false,
@@ -66,8 +66,9 @@ final class AgentHeroPresentationTests: XCTestCase {
             statusUptime: "8m",
             apiUptime: nil,
             apiLastError: nil,
-            hubConnectionState: "auth_failed",
-            isReachable: false
+            hubConnectionState: "disconnected",
+            isReachable: false,
+            localStatusRefused: true
         )
 
         XCTAssertEqual(presentation.label, "Status unavailable")
@@ -119,13 +120,13 @@ final class AgentHeroPresentationTests: XCTestCase {
             statusLastError: "",
             statusUptime: "2m",
             apiUptime: "2m",
-            apiLastError: "Hub rejected the configured token",
+            apiLastError: "auth_failed",
             hubConnectionState: "auth_failed",
             isReachable: true
         )
 
         XCTAssertEqual(presentation.label, "Token refused")
-        XCTAssertEqual(presentation.subtitle, "Hub rejected the configured token")
+        XCTAssertEqual(presentation.subtitle, "The Hub refused the agent token. Enter a new token in Settings › Connection.")
         XCTAssertEqual(presentation.tone, .bad)
     }
 

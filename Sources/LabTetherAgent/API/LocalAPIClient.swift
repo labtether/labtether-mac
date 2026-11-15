@@ -1,108 +1,6 @@
 import Foundation
 import Network
 
-struct LocalAPIRuntimeSnapshot: Equatable {
-    var isReachable = false
-    var hubConnectionState = "disconnected"
-    var assetID: String?
-    var uptime: String?
-    var lastError: String?
-    var lastErrorReason: String?
-    /// The Hub's words for a refused enrollment, while not connected.
-    var enrollmentError: String?
-}
-
-@MainActor
-final class LocalAPIRuntimeStore: ObservableObject {
-    @Published private(set) var snapshot = LocalAPIRuntimeSnapshot()
-
-    func publish(_ nextSnapshot: LocalAPIRuntimeSnapshot) {
-        guard snapshot != nextSnapshot else { return }
-        snapshot = nextSnapshot
-    }
-
-    func reset() {
-        publish(LocalAPIRuntimeSnapshot())
-    }
-}
-
-struct LocalAPIMetricsSnapshot: Equatable {
-    var current: MetricsSnapshot?
-    var history = MetricsHistory()
-    var presentation: LocalAPIMetricsPresentation?
-}
-
-@MainActor
-final class LocalAPIMetricsStore: ObservableObject {
-    @Published private(set) var snapshot = LocalAPIMetricsSnapshot()
-
-    func publish(_ nextSnapshot: LocalAPIMetricsSnapshot) {
-        guard snapshot != nextSnapshot else { return }
-        snapshot = nextSnapshot
-    }
-
-    func reset(clearHistory: Bool = true) {
-        let history = clearHistory ? MetricsHistory() : snapshot.history
-        publish(
-            LocalAPIMetricsSnapshot(
-                current: nil,
-                history: history,
-                presentation: nil
-            )
-        )
-    }
-}
-
-struct LocalAPIAlertsSnapshot: Equatable {
-    var alerts: [AlertSnapshot] = []
-    var firingAlerts: [AlertSnapshot] = []
-    var hasCriticalFiring = false
-
-    init(alerts: [AlertSnapshot] = []) {
-        self.alerts = alerts
-        self.firingAlerts = alerts.filter { $0.state == "firing" }
-        self.hasCriticalFiring = firingAlerts.contains { $0.severity == "critical" }
-    }
-}
-
-@MainActor
-final class LocalAPIAlertsStore: ObservableObject {
-    @Published private(set) var snapshot = LocalAPIAlertsSnapshot()
-
-    func publish(_ nextSnapshot: LocalAPIAlertsSnapshot) {
-        guard snapshot != nextSnapshot else { return }
-        snapshot = nextSnapshot
-    }
-
-    func reset() {
-        publish(LocalAPIAlertsSnapshot())
-    }
-}
-
-struct LocalAPIMetadataSnapshot: Equatable {
-    var agentVersion: String?
-    var updateAvailable = false
-    var latestVersion: String?
-    var deviceFingerprint: String?
-    var localBindAddress: String?
-    var localAuthEnabled: Bool?
-    var allowInsecureTransport: Bool?
-}
-
-@MainActor
-final class LocalAPIMetadataStore: ObservableObject {
-    @Published private(set) var snapshot = LocalAPIMetadataSnapshot()
-
-    func publish(_ nextSnapshot: LocalAPIMetadataSnapshot) {
-        guard snapshot != nextSnapshot else { return }
-        snapshot = nextSnapshot
-    }
-
-    func reset() {
-        publish(LocalAPIMetadataSnapshot())
-    }
-}
-
 // MARK: - LocalAPIClient
 
 /// Polls the Go agent's local HTTP API for metrics, status, and alerts.
@@ -133,6 +31,7 @@ final class LocalAPIClient: ObservableObject {
     private var latestStatusSnapshot: AgentStatusResponse?
     private var latestReachable: Bool = false
     private var latestHubConnectionState: String = "disconnected"
+    private var latestLocalStatusRefused = false
 
     // Surface visibility state controls the base poll interval.
     let visibility = VisibilityGate()
@@ -199,6 +98,15 @@ final class LocalAPIClient: ObservableObject {
 
     // MARK: - Public API
 
+    /// What the app calls when the child starts: the same settings the
+    /// child's environment is built from.
+    func start(settings: AgentSettings) {
+        start(port: settings.normalizedAgentPort(), authToken: settings.localAPIAuthToken)
+    }
+
+    /// The status endpoint this client polls.
+    var statusURL: URL? { URL(string: "\(baseURL)/agent/status") }
+
     func start(port: String, authToken: String?) {
         baseURL = "http://127.0.0.1:\(port)"
         let trimmedAuthToken = authToken?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -214,6 +122,7 @@ final class LocalAPIClient: ObservableObject {
         latestStatusSnapshot = nil
         latestReachable = false
         latestHubConnectionState = "disconnected"
+        latestLocalStatusRefused = false
         poll()
         scheduleNextPoll()
         startNetworkMonitor()
@@ -237,6 +146,7 @@ final class LocalAPIClient: ObservableObject {
         latestStatusSnapshot = nil
         latestReachable = false
         latestHubConnectionState = "disconnected"
+        latestLocalStatusRefused = false
         knownAlertIDs.removeAll()
         startupDeadline = nil
         // What is on screen does not change when the agent stops: the menu
@@ -283,7 +193,8 @@ final class LocalAPIClient: ObservableObject {
                 hubConnectionState: latestHubConnectionState,
                 assetID: nil,
                 uptime: nil,
-                lastError: nil
+                lastError: nil,
+                localStatusRefused: latestLocalStatusRefused
             )
         }
     }
@@ -323,7 +234,8 @@ final class LocalAPIClient: ObservableObject {
         uptime: String?,
         lastError: String?,
         lastErrorReason: String? = nil,
-        enrollmentError: String? = nil
+        enrollmentError: String? = nil,
+        localStatusRefused: Bool = false
     ) {
         runtime.publish(
             LocalAPIRuntimeSnapshot(
@@ -333,7 +245,8 @@ final class LocalAPIClient: ObservableObject {
                 uptime: uptime,
                 lastError: lastError,
                 lastErrorReason: lastErrorReason,
-                enrollmentError: enrollmentError
+                enrollmentError: enrollmentError,
+                localStatusRefused: localStatusRefused
             )
         )
     }
@@ -396,7 +309,7 @@ final class LocalAPIClient: ObservableObject {
     private func poll() {
         guard isPolling else { return }
         pollTask?.cancel()
-        guard let url = URL(string: "\(baseURL)/agent/status") else { return }
+        guard let url = statusURL else { return }
 
         var request = URLRequest(url: url)
         if let authToken, !authToken.isEmpty {
@@ -465,6 +378,7 @@ final class LocalAPIClient: ObservableObject {
     func applyNotModifiedPollResult() {
         startupDeadline = nil
         latestReachable = true
+        latestLocalStatusRefused = false
         if let latest = latestStatusSnapshot {
             latestHubConnectionState = latest.connectionState ?? (latest.connected ? "connected" : "disconnected")
             if status != latest {
@@ -489,6 +403,7 @@ final class LocalAPIClient: ObservableObject {
         startupDeadline = nil
         latestStatusSnapshot = decoded
         latestReachable = true
+        latestLocalStatusRefused = false
         latestHubConnectionState = decoded.connectionState ?? (decoded.connected ? "connected" : "disconnected")
         applyStatusSnapshot(decoded, appendHistory: animationsActive)
         consecutiveFailures = 0
@@ -501,6 +416,7 @@ final class LocalAPIClient: ObservableObject {
         latestStatusSnapshot = nil
         latestReachable = false
         latestHubConnectionState = "disconnected"
+        latestLocalStatusRefused = false
         runtime.reset()
         metrics.publish(
             LocalAPIMetricsSnapshot(
@@ -515,19 +431,23 @@ final class LocalAPIClient: ObservableObject {
         if !isStartingUp { consecutiveFailures += 1 }
     }
 
+    /// A 401 from the agent's local endpoint: the agent refused this app's
+    /// token. The Hub refused nothing, so the Hub state is left unknown.
     func applyPollAuthFailure() {
         startupDeadline = nil
         status = nil
         statusETag = nil
         latestStatusSnapshot = nil
         latestReachable = false
-        latestHubConnectionState = "auth_failed"
+        latestHubConnectionState = "disconnected"
+        latestLocalStatusRefused = true
         publishRuntimeSnapshot(
             isReachable: false,
-            hubConnectionState: "auth_failed",
+            hubConnectionState: "disconnected",
             assetID: nil,
             uptime: nil,
-            lastError: nil
+            lastError: nil,
+            localStatusRefused: true
         )
         metrics.publish(
             LocalAPIMetricsSnapshot(
@@ -568,6 +488,13 @@ final class LocalAPIClient: ObservableObject {
         knownAlertIDs.subtract(resolvedIDs)
     }
 
+    /// Decodes a `/agent/status` body as the poller does.
+    nonisolated static func decodeStatus(_ data: Data) throws -> AgentStatusResponse {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(AgentStatusResponse.self, from: data)
+    }
+
     private static func fetchStatus(
         session: URLSession,
         request: URLRequest
@@ -585,9 +512,7 @@ final class LocalAPIClient: ObservableObject {
             let etag = httpResp.value(forHTTPHeaderField: "ETag")?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             let decoded = try await Task.detached(priority: .utility) {
-                let decoder = JSONDecoder()
-                decoder.dateDecodingStrategy = .iso8601
-                return try decoder.decode(AgentStatusResponse.self, from: data)
+                try LocalAPIClient.decodeStatus(data)
             }.value
             return .success(decoded, etag: etag, payloadBytes: data.count)
         default:

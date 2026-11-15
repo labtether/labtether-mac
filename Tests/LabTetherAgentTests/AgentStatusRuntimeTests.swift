@@ -40,6 +40,24 @@ final class AgentStatusRuntimeTests: XCTestCase {
         )
     }
 
+    /// Since labtether-agent #127 the agent prints this line when the Hub
+    /// closes a connection straight after accepting it (ws_reconnect.go,
+    /// waitAfterSession). Risk: the app kept saying "Connected" while the
+    /// agent was waiting to reconnect.
+    func testHubClosingTheConnectionMeansReconnecting() {
+        let status = AgentStatus()
+        status.setPanelVisible(true)
+        status.handleEvent(.connected(url: "wss://hub.example.com:8443/ws/agent"))
+
+        status.handleEvent(LogParser().parse(
+            "2026/11/16 10:00:00 agentws: the connection to the Hub closed after 112ms; retrying in 1.187s"
+        ))
+
+        XCTAssertEqual(status.state, .reconnecting)
+        XCTAssertEqual(status.lastEvent, "Reconnecting in 1.187s")
+        XCTAssertEqual(status.lastError, "The Hub closed the connection after 112ms")
+    }
+
     func testAuthenticationFailureEventReplacesStartingState() {
         let status = AgentStatus()
         status.setPanelVisible(true)
@@ -68,7 +86,7 @@ final class AgentStatusRuntimeTests: XCTestCase {
         )
 
         XCTAssertEqual(status.state, .authFailed)
-        XCTAssertEqual(status.lastError, "auth_failed")
+        XCTAssertEqual(status.lastError, "The Hub refused the agent token. Enter a new token in Settings › Connection.")
         XCTAssertEqual(status.assetID, "")
     }
 

@@ -61,16 +61,41 @@ final class LocalAPIClientTests: XCTestCase {
         XCTAssertTrue(client.knownAlertIDs.isEmpty)
     }
 
-    func testPollAuthFailurePublishesAuthFailedState() {
+    func testPollAuthFailurePublishesLocalRefusal() {
         let client = LocalAPIClient()
 
         client.applyPollAuthFailure()
 
         XCTAssertFalse(client.isReachable)
-        XCTAssertEqual(client.hubConnectionState, "auth_failed")
+        XCTAssertTrue(client.runtime.snapshot.localStatusRefused)
         XCTAssertNil(client.status)
         XCTAssertNil(client.metrics.snapshot.current)
         XCTAssertTrue(client.alerts.snapshot.alerts.isEmpty)
+    }
+
+    /// The child gets the trimmed port; the poller must ask that same port.
+    /// Risk: a stray space in Settings left the menu on "Status unavailable"
+    /// while the agent ran fine.
+    func testPollerUsesThePortTheChildIsGiven() throws {
+        let suite = "LabTetherAgentTests.\(UUID().uuidString)"
+        let store = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("lt-port-\(UUID().uuidString)")
+        defer {
+            store.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: folder)
+        }
+        let settings = AgentSettings(testSettingsStore: store, appSupportDirectory: folder)
+        settings.hubURL = "wss://hub.example.com:8443/ws/agent"
+        settings.agentPort = " 8092 "
+        XCTAssertFalse(settings.validationErrors().contains { $0.contains("port") }, "a stray space passes validation")
+        let childPort = try XCTUnwrap(settings.buildEnvironment()["AGENT_PORT"])
+
+        let client = LocalAPIClient()
+        client.start(settings: settings)
+        defer { client.stop() }
+
+        XCTAssertEqual(childPort, "8092")
+        XCTAssertEqual(client.statusURL?.absoluteString, "http://127.0.0.1:\(childPort)/agent/status")
     }
 
     func testSuccessfulPollPublishesAgentVersion() {

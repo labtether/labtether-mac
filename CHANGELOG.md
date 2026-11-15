@@ -17,6 +17,16 @@ and this project uses [Semantic Versioning](https://semver.org/). The older
 - The README said every release is signed and notarized by Apple. Release
   2.0.0 is not. The README and the download check guide now point to the
   release notes and give the steps for a release that is not notarized.
+- The status line no longer shows the agent's internal codes, such as
+  `enrollment_pending` or `auth_failed`. A device waiting for the Hub's
+  approval now reads "Waiting for approval", and a refused token says what to
+  do next.
+- When the agent's own status endpoint refuses the app, the menu bar no longer
+  says the Hub refused the token. It says "Status unavailable".
+- When the Hub closes a new connection straight away, the app now shows
+  "Reconnecting" instead of "Connected".
+- An agent port typed with a space before or after it no longer leaves the
+  menu on "Status unavailable".
 
 ## [2.0.1]
 

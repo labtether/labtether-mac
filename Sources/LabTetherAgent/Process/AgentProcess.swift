@@ -33,6 +33,10 @@ final class AgentProcess: ObservableObject {
     private var userInitiatedStop = false
     /// Words for the line the agent printed when it refused to start, if it did.
     private var startRefusal: String?
+    /// The Hub closed the last connection soon after accepting it. The next
+    /// "connected" is then not announced either, so a Hub that keeps closing
+    /// new connections does not raise a notification each time.
+    private var hubClosedLastConnection = false
     var checkingHubChange = false
     var checkingChosenCA = false
     /// The saved CA file was checked for the start now under way.
@@ -170,6 +174,7 @@ final class AgentProcess: ObservableObject {
         userInitiatedStop = false
         needsRestart = false
         startRefusal = nil
+        hubClosedLastConnection = false
         isStarting = true
         status.prepareForLaunch(
             hubURL: settings.normalizedHubWebSocketURL() ?? settings.hubURL
@@ -375,14 +380,18 @@ final class AgentProcess: ObservableObject {
             switch line.event {
             case .connected:
                 if previousState != .connected {
-                    notifications.notify(.connected)
+                    if !hubClosedLastConnection { notifications.notify(.connected) }
                     // Reset crash counter on successful connection
                     crashCoordinator.reset()
                 }
+                hubClosedLastConnection = false
             case .reconnecting:
                 if previousState == .connected {
                     notifications.notify(.connectionLost)
                 }
+            case .connectionClosed:
+                // Printed only for a connection that lasted under 30 s.
+                hubClosedLastConnection = true
             case .enrolled:
                 notifications.notify(.enrolled)
             case .enrollmentTokenConsumed:
