@@ -124,6 +124,11 @@ final class AgentStatus: ObservableObject {
             setLastEvent("Reconnecting in \(delay)")
             assignIfChanged(\.lastError, error)
 
+        case .connectionClosed(let after, let retryIn):
+            assignIfChanged(\.state, .reconnecting)
+            setLastEvent("Reconnecting in \(retryIn)")
+            assignIfChanged(\.lastError, "The Hub closed the connection after \(after)")
+
         case .enrolling:
             assignIfChanged(\.state, .enrolling)
             setLastEvent("Enrolling with hub...")
@@ -216,6 +221,9 @@ final class AgentStatus: ObservableObject {
             assignIfChanged(\.assetID, assetID)
         }
 
+        // `last_error` is a fixed code; keep only its plain words.
+        let words = AgentLastError.words(for: snapshot.lastError)
+
         switch hubConnectionState {
         case "connected" where snapshot.isReachable:
             assignIfChanged(\.state, .connected)
@@ -223,26 +231,15 @@ final class AgentStatus: ObservableObject {
 
         case "connecting":
             assignIfChanged(\.state, .reconnecting)
-            if let error = snapshot.lastError?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !error.isEmpty {
-                assignIfChanged(\.lastError, error)
-            }
-
-        case "auth_failed":
-            assignIfChanged(\.state, .authFailed)
-            let error = snapshot.lastError?.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let error, !error.isEmpty {
-                assignIfChanged(\.lastError, error)
-            } else {
-                assignIfChanged(\.lastError, "Hub authentication failed")
-            }
+            assignIfChanged(\.lastError, words ?? "")
 
         case "disconnected" where snapshot.isReachable:
             assignIfChanged(\.state, .reconnecting)
-            if let error = snapshot.lastError?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !error.isEmpty {
-                assignIfChanged(\.lastError, error)
-            }
+            assignIfChanged(\.lastError, words ?? "")
+
+        case "auth_failed":
+            assignIfChanged(\.state, .authFailed)
+            assignIfChanged(\.lastError, words ?? "The Hub refused the agent token")
 
         default:
             // A reset/unreachable local API is not enough evidence to replace a

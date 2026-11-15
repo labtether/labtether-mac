@@ -4,6 +4,8 @@ import Foundation
 enum AgentEvent: Equatable, Sendable {
     case connected(url: String)
     case reconnecting(delay: String, error: String)
+    /// The Hub closed a connection soon after accepting it; the agent retries.
+    case connectionClosed(after: String, retryIn: String)
     case authenticationFailed(error: String)
     case enrolled(assetID: String)
     case enrolling
@@ -46,6 +48,16 @@ struct LogParser: Sendable {
                 let error = String(rest[rest.index(after: colonIdx)...]).trimmingCharacters(in: .whitespaces)
                 return .reconnecting(delay: delay, error: error)
             }
+        }
+
+        // agentws: the connection to the Hub closed after <d>; retrying in <d>
+        // (ws_reconnect.go waitAfterSession, labtether-agent #127)
+        if let rest = match(msg, prefix: "agentws: the connection to the Hub closed after "),
+           let split = rest.range(of: "; retrying in ") {
+            return .connectionClosed(
+                after: String(rest[..<split.lowerBound]),
+                retryIn: String(rest[split.upperBound...])
+            )
         }
 
         // agentws: auth failure (<attempts>), retrying in ...: <error>

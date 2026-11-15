@@ -28,11 +28,13 @@ struct AgentHeroPresentation: Equatable {
         apiLastErrorReason: String? = nil,
         hubHost: String? = nil,
         stoppedAt: Date? = nil,
-        enrollmentError: String? = nil
+        enrollmentError: String? = nil,
+        localStatusRefused: Bool = false
     ) -> AgentHeroPresentation {
         let statusError = trimmed(statusLastError)
-        // "transient" is the agent's retry class, not text for people.
-        let apiError = trimmed(apiLastError).flatMap { $0 == "transient" ? nil : $0 }
+        // `last_error` is a fixed code: only its plain words are shown.
+        let apiCode = AgentLastError(code: apiLastError)
+        let apiError = apiCode?.text
         let reason = HubConnectReason(code: apiLastErrorReason)?.summary
         let host = trimmed(hubHost)
 
@@ -61,6 +63,11 @@ struct AgentHeroPresentation: Equatable {
             return AgentHeroPresentation(label: "Enrollment refused", subtitle: refusal, tone: .bad)
         }
 
+        // A normal step of enrollment: the Hub has not approved this Mac yet.
+        if isReachable, hubConnectionState == "connecting", apiCode == .waitingForApproval {
+            return AgentHeroPresentation(label: "Waiting for approval", subtitle: apiError ?? "", tone: .accent)
+        }
+
         if isReachable {
             switch hubConnectionState {
             case "connected":
@@ -68,7 +75,7 @@ struct AgentHeroPresentation: Equatable {
                 return AgentHeroPresentation(
                     label: "Connected",
                     subtitle: joined(host, apiError ?? statusError ?? uptime),
-                    tone: .ok
+                    tone: apiError == nil ? .ok : .warn
                 )
             case "connecting":
                 return AgentHeroPresentation(
@@ -79,7 +86,7 @@ struct AgentHeroPresentation: Equatable {
             case "auth_failed":
                 return AgentHeroPresentation(
                     label: "Token refused",
-                    subtitle: reason ?? apiError ?? statusError ?? "The Hub refused the agent token",
+                    subtitle: apiError ?? reason ?? statusError ?? "The Hub refused the agent token",
                     tone: .bad
                 )
             default:
@@ -91,7 +98,7 @@ struct AgentHeroPresentation: Equatable {
             }
         }
 
-        if hubConnectionState == "auth_failed" {
+        if localStatusRefused {
             // The agent's local API refused the app's own token.
             return AgentHeroPresentation(
                 label: "Status unavailable",
@@ -150,7 +157,8 @@ struct AgentHeroPresentation: Equatable {
             apiLastErrorReason: runtime.snapshot.lastErrorReason,
             hubHost: includeHost ? hubHost(from: status.hubURL.isEmpty ? (settings?.hubURL ?? "") : status.hubURL) : nil,
             stoppedAt: status.stoppedAt,
-            enrollmentError: runtime.snapshot.enrollmentError
+            enrollmentError: runtime.snapshot.enrollmentError,
+            localStatusRefused: runtime.snapshot.localStatusRefused
         )
     }
 

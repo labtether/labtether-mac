@@ -76,10 +76,7 @@ final class AppState: ObservableObject {
             .sink { [weak self] running in
                 guard let self = self else { return }
                 if running {
-                    self.apiClient.start(
-                        port: self.settings.agentPort,
-                        authToken: self.settings.localAPIAuthToken
-                    )
+                    self.apiClient.start(settings: self.settings)
                 } else {
                     self.apiClient.stop()
                     self.bandwidthTracker.resetSession()
