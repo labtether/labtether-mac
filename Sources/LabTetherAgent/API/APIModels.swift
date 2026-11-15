@@ -76,4 +76,8 @@ struct AlertSnapshot: Codable, Identifiable, Equatable, Sendable {
     let summary: String
     let state: String
     let timestamp: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case id, severity, title, summary, state, timestamp
+    }
 }

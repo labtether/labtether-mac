@@ -21,7 +21,10 @@ let package = Package(
         .testTarget(
             name: "LabTetherAgentTests",
             dependencies: ["LabTetherAgent"],
-            path: "Tests/LabTetherAgentTests"
+            path: "Tests/LabTetherAgentTests",
+            // The protocol repo's local agent contract, copied by
+            // scripts/localagent-contract.py.
+            resources: [.copy("Fixtures/localagent")]
         ),
     ]
 )

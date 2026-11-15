@@ -28,6 +28,10 @@ jobs:
         run: python3 scripts/ci/check-line-limit.py
       - name: Block personal details
         run: python3 scripts/ci/check-private-info.py
+      # Offline: the copied agent status fixtures still match the protocol
+      # commit and hashes recorded in their SOURCE.json.
+      - name: Check the local agent contract copy
+        run: python3 scripts/localagent-contract.py verify
 
   qa-select:
     name: Select risk-based QA contracts
