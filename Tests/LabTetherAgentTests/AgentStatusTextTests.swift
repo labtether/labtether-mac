@@ -6,35 +6,13 @@ import XCTest
 /// `auth_failed`, ...) reached people as text, and a 401 from the agent's own
 /// local endpoint was shown as the Hub refusing the device.
 ///
-/// Bodies follow `StatusResponse` in the Go agent's
-/// `internal/agentcore/local_status.go`, and the state and code pairs follow
-/// `wsTransport.ConnectionState` in `ws_transport.go` (labtether-agent d0b6a7c).
+/// Bodies are the protocol contract's real `/agent/status` fixtures
+/// (`StatusFixtures`), decoded by the app's own decoder. A case no fixture
+/// covers uses a fixture with one field changed.
 @MainActor
 final class AgentStatusTextTests: XCTestCase {
     private let hubURL = "wss://hub.example.com:8443/ws/agent"
-
-    /// A body as the Go agent writes it, with nanosecond times.
-    private func goStatusBody(connected: Bool, state: String, lastError: String?, reason: String? = nil) -> Data {
-        var fields: [String] = [
-            #""agent_name":"nas01","asset_id":"nas01","port":"8091""#,
-            #""device_fingerprint":"SHA256:demo","device_key_algorithm":"ed25519""#,
-            #""connected":\#(connected),"connection_state":"\#(state)""#,
-        ]
-        if state != "connected", lastError != "enrollment_pending" {
-            fields.append(#""disconnected_at":"2026-11-16T09:58:01.204518337Z""#)
-        }
-        if let lastError { fields.append(#""last_error":"\#(lastError)""#) }
-        if let reason { fields.append(#""last_error_reason":"\#(reason)""#) }
-        fields.append(#""uptime":"2m3s","started_at":"2026-11-16T20:57:58.912345678+11:00""#)
-        fields.append(
-            #""metrics":{"asset_id":"nas01","cpu_percent":3.5,"memory_percent":41.2,"disk_percent":22,"#
-                + #""net_rx_bytes":123456,"net_tx_bytes":65432,"net_rx_bytes_per_sec":512,"#
-                + #""net_tx_bytes_per_sec":256,"collected_at":"2026-11-16T10:00:00.5Z"}"#
-        )
-        fields.append(#""alerts":[],"agent_version":"v2.0.1","local_bind_address":"127.0.0.1""#)
-        fields.append(#""local_auth_enabled":true,"allow_insecure_transport":false,"update_available":false"#)
-        return Data("{\(fields.joined(separator: ","))}".utf8)
-    }
+    private let notSaved = "This Mac could not save the agent token. Logs show why."
 
     /// What the menu shows for one poll: decoded, published and reconciled
     /// by the same code the app runs.
@@ -70,37 +48,123 @@ final class AgentStatusTextTests: XCTestCase {
         XCTAssertNil(text.range(of: #"[a-z]+_[a-z_]+"#, options: .regularExpression), "\(message): \(text)", line: line)
     }
 
-    func testEveryAgentCodeReadsAsWords() throws {
-        let notSaved = "This Mac could not save the agent token. Logs show why."
-        let cases: [(connected: Bool, state: String, code: String?, reason: String?, label: String, line: String)] = [
-            (false, "connecting", "enrollment_pending", nil, "Waiting for approval", "Approve this Mac in Devices on the Hub"),
-            (false, "connecting", "transient", nil, "Reconnecting", "hub.example.com"),
-            (false, "connecting", "agent_token_persistence_failed", nil, "Reconnecting", notSaved),
-            (false, "auth_failed", "auth_failed", "token_rejected", "Token refused",
-             "The Hub refused the agent token. Enter a new token in Settings › Connection."),
-            (false, "auth_failed", "enrollment_token_rejected", nil, "Token refused",
-             "The Hub refused this enrollment token. Make a new one in the console under Add device."),
-            (true, "connected", "agent_token_persistence_failed", nil, "Connected", "hub.example.com · \(notSaved)"),
-            (true, "connected", "agent_token_persistence_failed,consumed_enrollment_token_cleanup_failed", nil,
-             "Connected", "hub.example.com · \(notSaved)"),
-            (true, "connected", "consumed_enrollment_token_cleanup_failed", nil, "Connected", "hub.example.com · up 2m3s"),
-            // A code a later agent adds is never shown as it is.
-            (false, "connecting", "hub_moved_elsewhere", nil, "Reconnecting", "hub.example.com"),
-        ]
+    private struct Shown {
+        let body: String
+        let connected: Bool
+        let state: String
+        let label: String
+        let line: String
+    }
+
+    private func assertScreen(_ cases: [Shown], bodies: (Shown) throws -> Data, line: UInt = #line) throws {
         for item in cases {
-            let body = goStatusBody(connected: item.connected, state: item.state, lastError: item.code, reason: item.reason)
-            let (hero, status) = try screen(body)
-            let name = "\(item.state)/\(item.code ?? "-")"
-            XCTAssertEqual(hero.label, item.label, name)
-            XCTAssertEqual(hero.subtitle, item.line, name)
-            assertNoCode(hero.subtitle, name)
-            assertNoCode(status.lastError, "\(name) status.lastError")
+            let data = try bodies(item)
+            let decoded = try LocalAPIClient.decodeStatus(data)
+            let (hero, status) = try screen(data)
+            XCTAssertEqual(decoded.connected, item.connected, item.body, line: line)
+            XCTAssertEqual(decoded.connectionState, item.state, item.body, line: line)
+            XCTAssertEqual(hero.label, item.label, item.body, line: line)
+            XCTAssertEqual(hero.subtitle, item.line, item.body, line: line)
+            assertNoCode(hero.subtitle, item.body, line: line)
+            assertNoCode(status.lastError, "\(item.body) status.lastError", line: line)
+        }
+    }
+
+    /// Risk: a real agent state shows the wrong word, or a code as text.
+    func testEachContractStateShowsItsWords() throws {
+        let tokenRefused = "The Hub refused the agent token. Enter a new token in Settings › Connection."
+        let cases = [
+            Shown(body: "connected", connected: true, state: "connected",
+                  label: "Connected", line: "hub.example.com · up 2h14m33s"),
+            Shown(body: "alerts-with-temperature", connected: true, state: "connected",
+                  label: "Connected", line: "hub.example.com · up 2h14m33s"),
+            Shown(body: "connected-token-persistence-failed", connected: true, state: "connected",
+                  label: "Connected", line: "hub.example.com · \(notSaved)"),
+            Shown(body: "connecting-transient-host-unreachable", connected: false, state: "connecting",
+                  label: "Reconnecting", line: "Can't reach the Hub"),
+            Shown(body: "enrollment-pending", connected: false, state: "connecting",
+                  label: "Waiting for approval", line: "Approve this Mac in Devices on the Hub"),
+            Shown(body: "auth-failed-token-rejected", connected: false, state: "auth_failed",
+                  label: "Token refused", line: tokenRefused),
+            // The Hub's own words win over the app's line for a refused enrollment token.
+            Shown(body: "auth-failed-enrollment-token-rejected", connected: false, state: "auth_failed",
+                  label: "Enrollment refused", line: "This enrollment token expired. Make a new one in Devices, Add device."),
+            Shown(body: "enrollment-refused-hub-words", connected: false, state: "disconnected",
+                  label: "Enrollment refused", line: "An admin rejected this device in LabTether."),
+            Shown(body: "disconnected-no-transport", connected: false, state: "disconnected",
+                  label: "Disconnected", line: "hub.example.com"),
+            Shown(body: "minimal-optional-fields-absent", connected: false, state: "disconnected",
+                  label: "Disconnected", line: "hub.example.com"),
+        ]
+        XCTAssertEqual(Set(cases.map(\.body)), Set(StatusFixtures.names), "every fixture has a screen check")
+        try assertScreen(cases) { try StatusFixtures.data($0.body) }
+    }
+
+    /// Code pairs the contract allows that no fixture holds: each fixture
+    /// below gets one field changed.
+    func testCodePairsWithoutAFixtureReadAsWords() throws {
+        let edits: [String: (String, (inout [String: Any]) -> Void)] = [
+            "transient, no reason": ("connecting-transient-host-unreachable", { $0["last_error_reason"] = nil }),
+            "connecting, token not saved": ("enrollment-pending", { $0["last_error"] = "agent_token_persistence_failed" }),
+            "connected, two codes": ("connected", {
+                $0["last_error"] = "agent_token_persistence_failed,consumed_enrollment_token_cleanup_failed"
+            }),
+            "connected, used token kept": ("connected", { $0["last_error"] = "consumed_enrollment_token_cleanup_failed" }),
+            // An agent before 2.0 sends no Hub words.
+            "enrollment token refused, no Hub words": ("auth-failed-enrollment-token-rejected", { $0["enrollment_error"] = nil }),
+        ]
+        let cases = [
+            Shown(body: "transient, no reason", connected: false, state: "connecting",
+                  label: "Reconnecting", line: "hub.example.com"),
+            Shown(body: "connecting, token not saved", connected: false, state: "connecting",
+                  label: "Reconnecting", line: notSaved),
+            Shown(body: "connected, two codes", connected: true, state: "connected",
+                  label: "Connected", line: "hub.example.com · \(notSaved)"),
+            Shown(body: "connected, used token kept", connected: true, state: "connected",
+                  label: "Connected", line: "hub.example.com · up 2h14m33s"),
+            Shown(body: "enrollment token refused, no Hub words", connected: false, state: "auth_failed",
+                  label: "Token refused",
+                  line: "The Hub refused this enrollment token. Make a new one in the console under Add device."),
+        ]
+        try assertScreen(cases) { item in
+            let (base, edit) = try XCTUnwrap(edits[item.body])
+            return try StatusFixtures.variant(base, edit)
+        }
+    }
+
+    /// A code a later agent adds is never shown as it is: the generic line stays.
+    func testUnknownCodesShowTheGenericLine() throws {
+        let edits: [String: (String, (inout [String: Any]) -> Void)] = [
+            "unknown last_error, connecting": ("connecting-transient-host-unreachable", {
+                $0["last_error"] = "hub_moved_elsewhere"
+                $0["last_error_reason"] = nil
+            }),
+            "unknown last_error_reason": ("connecting-transient-host-unreachable", { $0["last_error_reason"] = "dns_poisoned" }),
+            "unknown last_error, auth_failed": ("auth-failed-token-rejected", {
+                $0["last_error"] = "hub_key_rotated"
+                $0["last_error_reason"] = nil
+            }),
+            "unknown last_error, connected": ("connected", { $0["last_error"] = "hub_moved_elsewhere" }),
+        ]
+        let cases = [
+            Shown(body: "unknown last_error, connecting", connected: false, state: "connecting",
+                  label: "Reconnecting", line: "hub.example.com"),
+            Shown(body: "unknown last_error_reason", connected: false, state: "connecting",
+                  label: "Reconnecting", line: "hub.example.com"),
+            Shown(body: "unknown last_error, auth_failed", connected: false, state: "auth_failed",
+                  label: "Token refused", line: "The Hub refused the agent token"),
+            Shown(body: "unknown last_error, connected", connected: true, state: "connected",
+                  label: "Connected", line: "hub.example.com · up 2h14m33s"),
+        ]
+        try assertScreen(cases) { item in
+            let (base, edit) = try XCTUnwrap(edits[item.body])
+            return try StatusFixtures.variant(base, edit)
         }
     }
 
     /// Waiting for approval is a normal step, not a fault.
     func testWaitingForApprovalIsNotAFault() throws {
-        let (hero, _) = try screen(goStatusBody(connected: false, state: "connecting", lastError: "enrollment_pending"))
+        let (hero, _) = try screen(StatusFixtures.data("enrollment-pending"))
         XCTAssertNotEqual(hero.tone, .bad)
         XCTAssertNotEqual(hero.tone, .warn)
     }

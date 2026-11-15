@@ -488,10 +488,12 @@ final class LocalAPIClient: ObservableObject {
         knownAlertIDs.subtract(resolvedIDs)
     }
 
-    /// Decodes a `/agent/status` body as the poller does.
+    /// Decodes a `/agent/status` body as the poller does. Times go through
+    /// `GoTime`, not `.iso8601`, so the result does not depend on the macOS
+    /// version.
     nonisolated static func decodeStatus(_ data: Data) throws -> AgentStatusResponse {
         let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = GoTime.decodingStrategy
         return try decoder.decode(AgentStatusResponse.self, from: data)
     }
 

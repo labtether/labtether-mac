@@ -27,6 +27,12 @@ and this project uses [Semantic Versioning](https://semver.org/). The older
   "Reconnecting" instead of "Connected".
 - An agent port typed with a space before or after it no longer leaves the
   menu on "Status unavailable".
+- The app reads the agent's times (such as `2026-11-14T07:26:34.418236512Z`)
+  with its own parser instead of the macOS date decoder. The agent always
+  sends its start time with a fraction of a second. If a macOS version could
+  not read that fraction, the app could never show status there. Only
+  macOS 27.2 has been checked; macOS 13 to 26 were not tested. A time the app
+  cannot read now shows as unknown instead of hiding the whole status.
 
 ## [2.0.1]
 

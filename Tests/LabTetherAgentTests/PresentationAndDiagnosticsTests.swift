@@ -133,12 +133,7 @@ final class AgentHeroPresentationTests: XCTestCase {
     // Risk: a Mac with Local Network access blocked showed "transient" while
     // reconnecting forever. The agent's reason must reach the menu as text.
     func testReconnectingShowsAgentConnectReasonInsteadOfRetryClass() throws {
-        let json = #"{"agent_name":"mac","asset_id":"a","port":"8091","connected":false,"#
-            + #""connection_state":"connecting","last_error":"transient","#
-            + #""last_error_reason":"host_unreachable","metrics":{"cpu_percent":0,"#
-            + #""memory_percent":0,"disk_percent":0,"net_rx_bytes_per_sec":0,"#
-            + #""net_tx_bytes_per_sec":0},"alerts":[]}"#
-        let status = try JSONDecoder().decode(AgentStatusResponse.self, from: Data(json.utf8))
+        let status = try LocalAPIClient.decodeStatus(StatusFixtures.data("connecting-transient-host-unreachable"))
 
         func subtitle(reason: String?) -> String {
             AgentHeroPresentation.resolve(
