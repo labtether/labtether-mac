@@ -2,7 +2,7 @@ import Foundation
 import UserNotifications
 
 /// Notification events for agent state transitions.
-enum AgentNotification {
+enum AgentNotification: Equatable {
     case connected
     case disconnected
     case enrolled
@@ -59,6 +59,8 @@ final class NotificationManager {
     /// bundle proxy is nil and calling `.current()` crashes. We detect
     /// this and silently disable notifications instead.
     private let available: Bool
+    /// Sees every notification the app asks for, shown or not. Tests use it.
+    var onNotify: ((AgentNotification) -> Void)?
 
     init(requestAuthorization: Bool = true, allowSystemIntegration: Bool = true) {
         self.available = allowSystemIntegration && Bundle.main.bundleIdentifier != nil && !Bundle.main.bundleIdentifier!.isEmpty
@@ -75,6 +77,7 @@ final class NotificationManager {
     }
 
     func notify(_ event: AgentNotification) {
+        onNotify?(event)
         guard available, authorized else { return }
 
         let content = UNMutableNotificationContent()

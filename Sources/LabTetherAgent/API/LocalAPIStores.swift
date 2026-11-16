@@ -5,6 +5,8 @@ import Foundation
 struct LocalAPIRuntimeSnapshot: Equatable {
     var isReachable = false
     var hubConnectionState = "disconnected"
+    /// The agent's time for the end of the last connection, when it sent one.
+    var disconnectedAt: Date?
     var assetID: String?
     var uptime: String?
     var lastError: String?

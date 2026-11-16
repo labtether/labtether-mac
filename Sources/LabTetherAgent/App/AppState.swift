@@ -88,15 +88,7 @@ final class AppState: ObservableObject {
                 self?.scheduleMenuBarLabelRefreshIfNeeded()
             }
 
-        apiRuntimeObserver = apiClient.runtime.$snapshot
-            .removeDuplicates()
-            .sink { [weak self] snapshot in
-                guard let self else { return }
-                self.status.reconcileRuntime(
-                    snapshot,
-                    processIsRunning: self.agentProcess.isRunning
-                )
-            }
+        apiRuntimeObserver = proc.followRuntime(apiClient.runtime)
 
         bandwidthMetricsObserver = apiClient.metrics.$snapshot
             .compactMap(\.current)

@@ -206,6 +206,7 @@ final class LocalAPIClient: ObservableObject {
         publishRuntimeSnapshot(
             isReachable: true,
             hubConnectionState: decoded.connectionState ?? (decoded.connected ? "connected" : "disconnected"),
+            disconnectedAt: decoded.disconnectedAt,
             assetID: decoded.assetID,
             uptime: decoded.uptime,
             lastError: decoded.lastError,
@@ -230,6 +231,7 @@ final class LocalAPIClient: ObservableObject {
     private func publishRuntimeSnapshot(
         isReachable: Bool,
         hubConnectionState: String,
+        disconnectedAt: Date? = nil,
         assetID: String?,
         uptime: String?,
         lastError: String?,
@@ -241,6 +243,7 @@ final class LocalAPIClient: ObservableObject {
             LocalAPIRuntimeSnapshot(
                 isReachable: isReachable,
                 hubConnectionState: hubConnectionState,
+                disconnectedAt: disconnectedAt,
                 assetID: assetID,
                 uptime: uptime,
                 lastError: lastError,
@@ -387,6 +390,7 @@ final class LocalAPIClient: ObservableObject {
             publishRuntimeSnapshot(
                 isReachable: true,
                 hubConnectionState: latestHubConnectionState,
+                disconnectedAt: latest.disconnectedAt,
                 assetID: latest.assetID,
                 uptime: latest.uptime,
                 lastError: latest.lastError,

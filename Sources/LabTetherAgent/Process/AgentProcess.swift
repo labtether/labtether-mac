@@ -33,10 +33,10 @@ final class AgentProcess: ObservableObject {
     private var userInitiatedStop = false
     /// Words for the line the agent printed when it refused to start, if it did.
     private var startRefusal: String?
-    /// The Hub closed the last connection soon after accepting it. The next
-    /// "connected" is then not announced either, so a Hub that keeps closing
-    /// new connections does not raise a notification each time.
-    private var hubClosedLastConnection = false
+    /// Connection notifications and crash-counter reset, from log or status.
+    private var connectionEffects = HubConnectionEffects()
+    /// Whether the running child has used its one-use enrollment token.
+    private var enrollmentWatch = ConsumedEnrollmentWatch()
     var checkingHubChange = false
     var checkingChosenCA = false
     /// The saved CA file was checked for the start now under way.
@@ -100,6 +100,7 @@ final class AgentProcess: ObservableObject {
         if proc.isRunning {
             kill(proc.processIdentifier, SIGKILL)
         }
+        settleConsumedEnrollment()
         childOwnership?.retire(proc)
         process = nil
         isRunning = false
@@ -174,7 +175,7 @@ final class AgentProcess: ObservableObject {
         userInitiatedStop = false
         needsRestart = false
         startRefusal = nil
-        hubClosedLastConnection = false
+        connectionEffects.reset()
         isStarting = true
         status.prepareForLaunch(
             hubURL: settings.normalizedHubWebSocketURL() ?? settings.hubURL
@@ -228,6 +229,7 @@ final class AgentProcess: ObservableObject {
         debugBootProcess("process launched pid=\(proc.processIdentifier)")
 
         self.process = proc
+        enrollmentWatch.launched(environment: proc.environment, enrollmentToken: settings.enrollmentToken)
         self.isRunning = true
         self.isStarting = false
         status.markStarting(pid: proc.processIdentifier)
@@ -298,6 +300,9 @@ final class AgentProcess: ObservableObject {
     /// Only the exact current Process owns runtime state and ephemeral secrets.
     func handleTermination(of proc: Process) {
         guard process === proc else { childOwnership?.retire(proc); return }
+        // A child that used its token and then quit before a poll saw it
+        // connected: the next start would write the token file again.
+        settleConsumedEnrollment()
         childOwnership?.retire(proc)
         let previousState = status.state
         let wasUserStop = userInitiatedStop
@@ -376,30 +381,80 @@ final class AgentProcess: ObservableObject {
             status.handleEvent(line.event)
             sessionHistory.handleEvent(line.event, timestamp: Date())
 
-            // Fire notifications on significant state transitions
+            // Fire notifications on significant state transitions. The status
+            // poll reaches the same effects without these lines; see
+            // handleRuntimeSnapshot.
             switch line.event {
             case .connected:
-                if previousState != .connected {
-                    if !hubClosedLastConnection { notifications.notify(.connected) }
-                    // Reset crash counter on successful connection
-                    crashCoordinator.reset()
-                }
-                hubClosedLastConnection = false
+                apply(connectionEffects.connected(wasConnected: previousState == .connected, at: Date()))
             case .reconnecting:
-                if previousState == .connected {
-                    notifications.notify(.connectionLost)
-                }
+                apply(connectionEffects.logRetrying(wasConnected: previousState == .connected))
             case .connectionClosed:
                 // Printed only for a connection that lasted under 30 s.
-                hubClosedLastConnection = true
+                connectionEffects.logHubClosedShortly()
             case .enrolled:
-                notifications.notify(.enrolled)
+                announceEnrolled()
             case .enrollmentTokenConsumed:
+                enrollmentWatch.finish()
                 settings.clearConsumedEnrollmentTokenPreservingAgentToken()
             default:
                 break
             }
         }
+    }
+
+    /// The agent's status, polled from its local endpoint. It drives the same
+    /// effects as the log lines, so an agent whose log the app does not know
+    /// still gets them, a poll later at most. Effects key off the app's state
+    /// before and after, so a change the log already reported does nothing.
+    func handleRuntimeSnapshot(_ snapshot: LocalAPIRuntimeSnapshot) {
+        let previous = status.state
+        status.reconcileRuntime(snapshot, processIsRunning: isRunning)
+        guard isRunning else { return }
+        let current = status.state
+        let hubState = snapshot.hubConnectionState.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if current == .connected && previous != .connected {
+            apply(connectionEffects.connected(wasConnected: false, at: Date()))
+        }
+        if previous == .connected && current == .reconnecting {
+            connectionEffects.statusLeftConnected(disconnectedAt: snapshot.disconnectedAt, now: Date())
+        }
+        if hubState == "connecting" && AgentLastError(code: snapshot.lastError) == .retrying {
+            apply(connectionEffects.statusRetrying())
+        }
+        if snapshot.isReachable && hubState == "connected" {
+            settleConsumedEnrollment()
+        }
+    }
+
+    /// Follows the poller's status the way the app does.
+    func followRuntime(_ runtime: LocalAPIRuntimeStore) -> AnyCancellable {
+        runtime.$snapshot
+            .removeDuplicates()
+            .sink { [weak self] snapshot in self?.handleRuntimeSnapshot(snapshot) }
+    }
+
+    private func apply(_ effects: [HubConnectionEffects.Effect]) {
+        for effect in effects {
+            switch effect {
+            case .announceConnected: notifications.notify(.connected)
+            case .resetCrashCounter: crashCoordinator.reset()
+            case .announceConnectionLost: notifications.notify(.connectionLost)
+            }
+        }
+    }
+
+    private func announceEnrolled() {
+        guard !enrollmentWatch.announced else { return }
+        enrollmentWatch.markAnnounced()
+        notifications.notify(.enrolled)
+    }
+
+    /// Removes the Keychain enrollment token once the child has used it.
+    private func settleConsumedEnrollment() {
+        guard enrollmentWatch.consumed(settings: settings) else { return }
+        announceEnrolled()
+        settings.clearConsumedEnrollmentTokenPreservingAgentToken()
     }
 
     /// Reads lines from `pipe` in a background thread.
