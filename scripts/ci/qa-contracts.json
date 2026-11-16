@@ -12,6 +12,7 @@
     ".github/workflows/**",
     "Package.swift",
     "Sources/**",
+    "packaging/**",
     "scripts/**"
   ],
   "rules": [
@@ -34,6 +35,7 @@
         ".github/workflows/release.yml",
         "Package.swift",
         "Sources/LabTetherAgent/Resources/**",
+        "packaging/**",
         "scripts/build-app.sh",
         "scripts/build-dmg.sh",
         "scripts/publish-local-release.sh",

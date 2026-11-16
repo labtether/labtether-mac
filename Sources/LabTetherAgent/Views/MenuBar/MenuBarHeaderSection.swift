@@ -40,10 +40,12 @@ struct MenuBarHeaderSection: View {
 }
 
 /// The status word with its one line underneath. A problem turns the line amber or red.
+/// The Store edition adds "Monitoring only": its agent reports and offers no actions.
 struct AgentStatusText: View {
     let hero: AgentHeroPresentation
     var needsRestart = false
     var titleSize: CGFloat = 14
+    var editionLabel: String? = AppEdition.current.agentEditionLabel
 
     var body: some View {
         VStack(alignment: .leading, spacing: titleSize > 14 ? 2 : 0) {
@@ -55,6 +57,11 @@ struct AgentStatusText: View {
                     .font(LT.font(12).monospacedDigit())
                     .foregroundStyle(lineColor)
                     .lineLimit(2)
+            }
+            if let editionLabel {
+                Text(editionLabel)
+                    .font(LT.font(12))
+                    .foregroundStyle(LT.text3)
             }
         }
         .accessibilityElement(children: .combine)

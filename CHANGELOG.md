@@ -9,6 +9,17 @@ and this project uses [Semantic Versioning](https://semver.org/). The older
 ## [Unreleased]
 
 ### Added
+- A Mac App Store edition, built from the same source with
+  `scripts/build-app.sh --edition store`. It runs in the App Sandbox and
+  bundles the Rust agent's monitoring edition, so it reports CPU, memory,
+  disk, network, host details, disks and interfaces and offers no terminal,
+  files, Remote View or other actions. The app shows "Monitoring only" under
+  the agent's state. It has no update check (the App Store updates it), no
+  Screen Sharing checks, and no Docker, file access, service discovery or
+  Remote View settings. The Hub CA file is chosen with a file panel. Setup
+  says that macOS asks before the Mac can reach a Hub on the local network,
+  and shows a button to the Local Network settings when access is off. Not
+  yet submitted to the App Store. The download edition is unchanged.
 - Releases also come as a disk image, `labtether-agent-macos-universal.dmg`,
   with the app and a shortcut to Applications, and its own `.sha256` file.
   The `.tar.gz` stays under the same name.

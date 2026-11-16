@@ -116,5 +116,10 @@ Read user-facing text once against this list before you ship it.
   Installed-app and menu bar QA runs on the macOS lab machine.
 - Packaging: `scripts/build-app.sh`. Release steps: `docs/releasing.md`. Read
   both before packaging, signing or releasing.
+- The Mac App Store edition is the same source built with
+  `scripts/build-app.sh --edition store` (`-D LABTETHER_STORE`, the Rust
+  agent in `Contents/MacOS`, App Sandbox). `AppEdition` holds its choices;
+  `docs/building.md` lists its entitlements and what it leaves out. `swift
+  test` covers the Developer ID edition and the Store choices it can reach.
 - A release package must bundle the exact matching Go agent tag. Passing Swift
   tests does not prove install, menu bar behavior, signing or notarization.

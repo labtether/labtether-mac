@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!-- The bundled agent in Contents/MacOS: Apple's rule for a helper tool in a
+     sandboxed app is exactly these two keys; it runs with the app's sandbox. -->
+<dict>
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    <key>com.apple.security.inherit</key>
+    <true/>
+</dict>
+</plist>

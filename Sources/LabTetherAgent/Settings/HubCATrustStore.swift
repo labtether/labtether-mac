@@ -164,7 +164,7 @@ extension AgentSettings {
         forgetChosenCA()
     }
 
-    private func writeChildFile(_ data: Data, name: String) throws {
+    func writeChildFile(_ data: Data, name: String) throws {
         if let stateLocation {
             _ = try? stateLocation.removeRegularFile(name)
             try stateLocation.write(data, name: name)

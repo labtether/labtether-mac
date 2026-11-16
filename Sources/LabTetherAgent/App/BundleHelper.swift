@@ -1,6 +1,7 @@
 import Foundation
 
-/// Locates the Go agent binary bundled inside the .app Resources directory.
+/// Locates the agent binary bundled in the .app: Contents/Resources for the
+/// Developer ID edition, Contents/MacOS for the Store edition.
 enum BundleHelper {
     private static let bundledAgentName = "labtether-agent"
     private static let resourceBundleName = "LabTetherAgent_LabTetherAgent"
@@ -8,6 +9,12 @@ enum BundleHelper {
     /// Path to the Go binary inside the app bundle.
     /// Falls back to a development path if not running from a bundle.
     static var agentBinaryPath: String {
+        // The Store edition's agent is in Contents/MacOS and is the only one
+        // it starts: no override or development copy, which would run a
+        // binary that is not signed with the app's sandbox rules.
+        if AppEdition.current.agentInMacOSFolder {
+            return Bundle.main.path(forAuxiliaryExecutable: bundledAgentName) ?? bundledAgentName
+        }
         let bundledPath = Bundle.main.path(forResource: bundledAgentName, ofType: nil)
         let overridePath = ProcessInfo.processInfo.environment["LABTETHER_AGENT_BINARY_PATH"]
         return resolveAgentBinaryPath(

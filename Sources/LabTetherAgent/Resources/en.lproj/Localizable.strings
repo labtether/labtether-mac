@@ -96,3 +96,13 @@
 "uninstall.message" = "This removes all settings, tokens and history, then quits the app.";
 "uninstall.confirm" = "Uninstall and quit";
 "uninstall.cancel" = "Cancel";
+
+/* Mac App Store edition */
+"store.monitoring_only" = "Monitoring only";
+"store.local_network" = "Local network";
+"store.local_network_ask" = "macOS asks before this Mac can reach a Hub on your network. Choose Allow.";
+"store.local_network_denied" = "Local Network access is off for %@.";
+"store.local_network_open_settings" = "Open Settings";
+"store.ca_choose" = "Choose…";
+"store.ca_remove" = "Remove";
+"store.ca_none" = "None";

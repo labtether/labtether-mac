@@ -24,12 +24,17 @@ final class ScreenSharingMonitor: ObservableObject {
     private let visibility = VisibilityGate()
 
     private weak var notifications: NotificationManager?
+    /// False in the Store edition: it has no Remote View, so it never probes
+    /// port 5900 or runs `dscl`, and the rows that read this stay hidden.
+    private let isActive: Bool
 
-    init(notifications: NotificationManager? = nil) {
+    init(notifications: NotificationManager? = nil, isActive: Bool = AppEdition.current.offersRemoteView) {
         self.notifications = notifications
+        self.isActive = isActive
     }
 
     func startMonitoring() {
+        guard isActive else { return }
         check()
         scheduleTimer()
     }
@@ -52,6 +57,7 @@ final class ScreenSharingMonitor: ObservableObject {
     }
 
     func check() {
+        guard isActive else { return }
         Task {
             let enabled = await Self.probePort5900()
             let wasEnabled = self.latestIsEnabled
@@ -123,6 +129,7 @@ final class ScreenSharingMonitor: ObservableObject {
 
     private func scheduleTimer() {
         timer?.invalidate()
+        guard isActive else { return }
         timer = Timer.scheduledTimer(withTimeInterval: currentCheckInterval, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.check() }
         }
@@ -161,6 +168,11 @@ final class ScreenSharingMonitor: ObservableObject {
 
     /// Grants full ARD control privileges using the kickstart tool (requires admin password).
     static func grantControlAccess() -> ControlAccessGrantResult {
+        // Not in the Store binary: App Review Guideline 2.4.5(v) forbids
+        // asking for administrator rights.
+        #if LABTETHER_STORE
+        return .unavailable
+        #else
         guard !AppStateLocation.current.isolated else { return .unavailable }
         let kickstart = "/System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart"
         let command = screenSharingGrantCommand(kickstart: kickstart, user: NSUserName())
@@ -171,6 +183,7 @@ final class ScreenSharingMonitor: ObservableObject {
         var error: NSDictionary?
         appleScript.executeAndReturnError(&error)
         return grantResult(appleScriptError: error)
+        #endif
     }
 
     /// AppleScript reports a dismissed administrator prompt as error -128.

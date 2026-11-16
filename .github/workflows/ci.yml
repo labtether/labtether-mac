@@ -86,6 +86,10 @@ jobs:
       # This suite also owns the native transport, identity and enrollment checks.
       - name: Run Swift tests
         run: swift test
+      # The Mac App Store edition compiles code that no step above builds
+      # (`#if LABTETHER_STORE`): without this a change could break it unseen.
+      - name: Build the Mac App Store edition
+        run: swift build -Xswiftc -DLABTETHER_STORE
 
   mac-installed-app:
     name: Contract / Installed macOS application bundle

@@ -25,7 +25,8 @@ final class AppState: ObservableObject {
     let performanceAutomation: PerformanceAutomationController
     let sessionHistory: SessionHistoryTracker
     let bandwidthTracker: BandwidthTracker
-    let appUpdates: AppUpdateChecker
+    /// None in the Store edition: the Mac App Store updates the app.
+    let appUpdates: AppUpdateChecker?
     private var bandwidthMetricsObserver: AnyCancellable?
 
     @Published var shouldShowOnboarding = false
@@ -66,7 +67,7 @@ final class AppState: ObservableObject {
         self.agentProcess = proc
         self.screenSharing = ScreenSharingMonitor(notifications: notifications)
         self.performanceAutomation = PerformanceAutomationController(logBuffer: logBuffer)
-        self.appUpdates = AppUpdateChecker(settings: settings)
+        self.appUpdates = AppEdition.current.checksForAppUpdates ? AppUpdateChecker(settings: settings) : nil
         apiClient.notifications = notifications
         debugBoot("Settings snapshot autoStart=\(settings.autoStart) isConfigured=\(settings.isConfigured) hubURL=\(settings.hubURL) port=\(settings.agentPort)")
 
@@ -188,10 +189,11 @@ final class AppState: ObservableObject {
             }
         }
 
-        // Start monitoring Screen Sharing status
+        // Start monitoring Screen Sharing status (never in the Store edition,
+        // which has no Remote View; see ScreenSharingMonitor.isActive).
         screenSharing.startMonitoring()
         // Notify-only app update check (at most once a day, opt-out in Settings).
-        appUpdates.start()
+        appUpdates?.start()
         #if DEBUG
         // Profiling hook for local debug builds. Any local process can post a
         // distributed notification, so release builds never listen for it.

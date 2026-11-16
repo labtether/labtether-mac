@@ -146,6 +146,9 @@ struct OnboardingView: View {
     @StateObject private var state = OnboardingState()
     @StateObject private var trust = HubTrustFlow()
     @State private var showAdvanced = false
+    /// Store edition: bumped after each test or Connect, so the Local Network
+    /// step looks at what macOS answered.
+    @State private var localNetworkCheck = 0
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -241,7 +244,10 @@ struct OnboardingView: View {
                 LTFormRow(label: "") {
                     HStack(spacing: 10) {
                         Button {
-                            Task { await state.testConnection(settings: settings, trust: trust) }
+                            Task {
+                                await state.testConnection(settings: settings, trust: trust)
+                                localNetworkCheck += 1
+                            }
                         } label: {
                             HStack(spacing: LT.space6) {
                                 if state.isTesting { LTSpinnerArc(color: LT.text3, size: 11) }
@@ -253,6 +259,13 @@ struct OnboardingView: View {
                         .disabled(state.isTesting || trust.offer != nil
                                   || AgentSettingsNormalization.canonicalHubWebSocketURL(from: state.hubURL) == nil)
                         ConnectionTestResultText(result: state.connectionTestResult)
+                    }
+                }
+                // macOS asks before a new app may reach the local network;
+                // until the person allows it, a Hub on the LAN is unreachable.
+                if AppEdition.current.explainsLocalNetworkInSetup {
+                    LTFormRow(label: L10n.storeLocalNetwork, alignment: .top) {
+                        LocalNetworkStep(hubURL: state.hubURL, checkToken: localNetworkCheck)
                     }
                 }
             }
@@ -282,7 +295,7 @@ struct OnboardingView: View {
     /// the token) starts only once the Hub verifies.
     private func finish() {
         Task {
-            if await state.connect(settings: settings, trust: trust) == .go { startAndClose() }
+            if await state.connect(settings: settings, trust: trust) == .go { startAndClose() } else { localNetworkCheck += 1 }
         }
     }
 

@@ -1,8 +1,8 @@
 import Foundation
 
-/// Builds the environment dictionary for the Go agent process from AgentSettings.
+/// Builds the environment dictionary for the agent process from AgentSettings.
 enum AgentEnvironmentBuilder {
-    static func buildEnvironment(from settings: AgentSettings) throws -> [String: String] {
+    static func buildEnvironment(from settings: AgentSettings, edition: AppEdition = .current) throws -> [String: String] {
         try settings.stateLocation?.validateRuntimeFiles()
         var env: [String: String] = [:]
 
@@ -83,13 +83,57 @@ enum AgentEnvironmentBuilder {
             tlsCAOnly: pinnedCAOnly
         )) { _, new in new }
         env["AGENT_PORT"] = settings.normalizedAgentPort()
+        ManagedAppUpdatePolicy.apply(to: &env)
+        env["LABTETHER_ALLOW_REMOTE_OVERRIDES"] = settings.allowRemoteOverrides ? "true" : "false"
+        env["LABTETHER_LOG_LEVEL"] = settings.normalizedLogLevel()
+        if edition.offersAgentPageSettings {
+            env.merge(try agentPageEnvironment(from: settings)) { _, new in new }
+        } else {
+            // The Store edition hides these settings and its agent has none of
+            // their pages: a value nobody can see must not reach the agent.
+            // A TURN password file left by an earlier setup is removed.
+            try settings.removeRuntimeSecretIfNeeded(
+                at: settings.webrtcTurnPassFilePath,
+                issueKey: "runtime.turnPass",
+                label: "WebRTC TURN password"
+            )
+        }
+        env["LABTETHER_TOKEN_FILE"] = settings.tokenFilePath
+        // The child saves Hub-pushed settings here and prefers them over the
+        // values above. With Allow Remote Overrides off they must not linger.
+        if !settings.allowRemoteOverrides {
+            do { _ = try settings.removeChildFile("agent-config.json") } catch {
+                throw AgentSettingsSecretError(
+                    message: "Settings saved from the Hub could not be removed from \(settings.agentSettingsFilePath).")
+            }
+        }
+        env["LABTETHER_AGENT_SETTINGS_FILE"] = settings.agentSettingsFilePath
+        env["LABTETHER_DEVICE_KEY_FILE"] = settings.deviceKeyFilePath
+        env["LABTETHER_DEVICE_PUBLIC_KEY_FILE"] = settings.devicePublicKeyFilePath
+        env["LABTETHER_DEVICE_FINGERPRINT_FILE"] = settings.deviceFingerprintFilePath
+        env["LABTETHER_AGENT_LOCAL_AUTH_TOKEN_FILE"] = try settings.ensureLocalAPIAuthToken()
+
+        // Include common GUI-safe executable paths so tools like tailscale are discoverable.
+        env["PATH"] = settings.mergedExecutablePath()
+        // Inherit HOME for SSH key operations
+        if let state = settings.stateLocation, state.isolated {
+            env["HOME"] = state.root.path
+            env["TMPDIR"] = state.root.path
+        } else if let home = ProcessInfo.processInfo.environment["HOME"] {
+            env["HOME"] = home
+        }
+
+        return env
+    }
+
+    /// Docker, files, log stream, WebRTC, capture and service discovery: the
+    /// settings of agent pages the Developer ID edition offers.
+    private static func agentPageEnvironment(from settings: AgentSettings) throws -> [String: String] {
+        var env: [String: String] = [:]
         env["LABTETHER_DOCKER_ENABLED"] = settings.normalizedDockerMode()
         env["LABTETHER_DOCKER_SOCKET"] = settings.normalizedDockerEndpoint()
         env["LABTETHER_DOCKER_DISCOVERY_INTERVAL"] = settings.normalizedDockerDiscoveryInterval()
         env["LABTETHER_FILES_ROOT_MODE"] = settings.normalizedFilesRootMode()
-        ManagedAppUpdatePolicy.apply(to: &env)
-        env["LABTETHER_ALLOW_REMOTE_OVERRIDES"] = settings.allowRemoteOverrides ? "true" : "false"
-        env["LABTETHER_LOG_LEVEL"] = settings.normalizedLogLevel()
         // Background `log stream --style ndjson` parsing is a measurable idle CPU hotspot
         // on macOS. Default this menu-bar runtime to on-demand logs only.
         let inheritedLogStream = ProcessInfo.processInfo.environment["LABTETHER_LOG_STREAM_ENABLED"]?
@@ -141,31 +185,6 @@ enum AgentEnvironmentBuilder {
         env["LABTETHER_SERVICES_DISCOVERY_LAN_SCAN_CIDRS"] = settings.normalizedCIDRList(settings.servicesDiscoveryLANScanCIDRs)
         env["LABTETHER_SERVICES_DISCOVERY_LAN_SCAN_PORTS"] = settings.normalizedPortList(settings.servicesDiscoveryLANScanPorts)
         env["LABTETHER_SERVICES_DISCOVERY_LAN_SCAN_MAX_HOSTS"] = settings.normalizedLANScanMaxHosts()
-        env["LABTETHER_TOKEN_FILE"] = settings.tokenFilePath
-        // The child saves Hub-pushed settings here and prefers them over the
-        // values above. With Allow Remote Overrides off they must not linger.
-        if !settings.allowRemoteOverrides {
-            do { _ = try settings.removeChildFile("agent-config.json") } catch {
-                throw AgentSettingsSecretError(
-                    message: "Settings saved from the Hub could not be removed from \(settings.agentSettingsFilePath).")
-            }
-        }
-        env["LABTETHER_AGENT_SETTINGS_FILE"] = settings.agentSettingsFilePath
-        env["LABTETHER_DEVICE_KEY_FILE"] = settings.deviceKeyFilePath
-        env["LABTETHER_DEVICE_PUBLIC_KEY_FILE"] = settings.devicePublicKeyFilePath
-        env["LABTETHER_DEVICE_FINGERPRINT_FILE"] = settings.deviceFingerprintFilePath
-        env["LABTETHER_AGENT_LOCAL_AUTH_TOKEN_FILE"] = try settings.ensureLocalAPIAuthToken()
-
-        // Include common GUI-safe executable paths so tools like tailscale are discoverable.
-        env["PATH"] = settings.mergedExecutablePath()
-        // Inherit HOME for SSH key operations
-        if let state = settings.stateLocation, state.isolated {
-            env["HOME"] = state.root.path
-            env["TMPDIR"] = state.root.path
-        } else if let home = ProcessInfo.processInfo.environment["HOME"] {
-            env["HOME"] = home
-        }
-
         return env
     }
 

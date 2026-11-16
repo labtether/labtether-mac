@@ -1,7 +1,8 @@
 import AppKit
 
-/// Performs a clean uninstall: stops agent, removes the Hub SSH key it added,
-/// removes config, credentials, and history, then quits.
+/// Performs a clean uninstall: stops agent, removes the Hub SSH key it added
+/// (Developer ID edition), removes config, credentials, and history, then quits.
+/// In the Store edition the config and history are in the app's container.
 enum UninstallManager {
     /// Set once the app's folder and settings are removed. Quitting must then
     /// write nothing: saving history on the way out put the folder and the
@@ -19,7 +20,10 @@ enum UninstallManager {
         // 1. Stop agent
         agentProcess.forceKill()
         // 2. Remove the Hub SSH key line the agent added, while its record
-        //    still exists. This never stops the uninstall.
+        //    still exists. This never stops the uninstall. Not in the Store
+        //    edition: its agent never adds a key (no SSH key page), has no
+        //    `ssh-key` command, and the sandbox keeps it out of ~/.ssh.
+        #if !LABTETHER_STORE
         if case .failed(let detail) = HubSSHKeyRemover.run(
             agentBinaryPath: BundleHelper.agentBinaryPath,
             tokenFilePath: settings.tokenFilePath,
@@ -31,6 +35,7 @@ enum UninstallManager {
             alert.informativeText = "LabTether could not remove the line it added to ~/.ssh/authorized_keys (\(detail)). Remove that line by hand. Uninstall will continue."
             alert.runModal()
         }
+        #endif
         // 3. Remove login item
         _ = LoginItemManager.setEnabled(false)
         // 4. Delete Keychain entries
