@@ -2,18 +2,28 @@ import SwiftUI
 
 /// Settings › Advanced: startup, Docker, files and logs, service discovery,
 /// Remote View, menu bar, network and (collapsed) diagnostics.
+///
+/// The Store edition hides what its monitoring agent cannot do (Docker, file
+/// access, service discovery, Remote View) instead of showing it greyed out.
 struct SettingsAdvancedTab: View {
     @ObservedObject var settings: AgentSettings
     @ObservedObject var status: AgentStatus
     @ObservedObject var metadata: LocalAPIMetadataStore
+    var edition: AppEdition = .current
 
     var body: some View {
         VStack(alignment: .leading, spacing: LT.space24) {
-            SettingsStartupSection(settings: settings, status: status)
-            dockerSection
-            filesAndLogsSection
-            SettingsDiscoverySection(settings: settings)
-            SettingsRemoteViewSection(settings: settings)
+            SettingsStartupSection(settings: settings, status: status, edition: edition)
+            if edition.offersAgentPageSettings {
+                dockerSection
+                filesAndLogsSection
+                SettingsDiscoverySection(settings: settings)
+            } else {
+                agentSection
+            }
+            if edition.offersRemoteView {
+                SettingsRemoteViewSection(settings: settings)
+            }
             SettingsMenuBarSection(settings: settings)
             SettingsSection("Network") {
                 SettingsNumberRow(
@@ -63,6 +73,33 @@ struct SettingsAdvancedTab: View {
         }
     }
 
+    // MARK: - Agent (Store edition)
+
+    /// What the monitoring agent reads: the Hub may change how often it
+    /// reports (collect and heartbeat intervals), and the log level.
+    private var agentSection: some View {
+        SettingsSection("Agent") {
+            LTToggleRow(
+                label: "Allow Hub overrides",
+                isOn: $settings.allowRemoteOverrides,
+                detail: "The Hub can change how often the agent reports.",
+                onChange: { settings.markChanged() }
+            )
+            logLevelRow
+        }
+    }
+
+    private var logLevelRow: some View {
+        SettingsPickerRow(
+            label: "Log level",
+            selection: Binding(
+                get: { settings.normalizedLogLevel() },
+                set: { settings.logLevel = $0; settings.markChanged() }
+            ),
+            options: [("Debug", "debug"), ("Info", "info"), ("Warn", "warn"), ("Error", "error")]
+        )
+    }
+
     // MARK: - Files and logs
 
     private var filesAndLogsSection: some View {
@@ -81,14 +118,7 @@ struct SettingsAdvancedTab: View {
                 detail: "The Hub can change these settings.",
                 onChange: { settings.markChanged() }
             )
-            SettingsPickerRow(
-                label: "Log level",
-                selection: Binding(
-                    get: { settings.normalizedLogLevel() },
-                    set: { settings.logLevel = $0; settings.markChanged() }
-                ),
-                options: [("Debug", "debug"), ("Info", "info"), ("Warn", "warn"), ("Error", "error")]
-            )
+            logLevelRow
         }
     }
 }

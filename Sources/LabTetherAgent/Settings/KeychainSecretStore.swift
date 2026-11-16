@@ -21,7 +21,7 @@ enum KeychainSecretStore {
         }
     }
 
-    private static let service = "com.labtether.agent"
+    private static let service = AppEdition.current.keychainService(bundleIdentifier: Bundle.main.bundleIdentifier)
     private static let loadQueue = DispatchQueue(
         label: "com.labtether.agent.keychain-load",
         qos: .userInitiated,

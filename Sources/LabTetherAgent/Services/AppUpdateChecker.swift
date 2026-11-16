@@ -96,6 +96,11 @@ final class AppUpdateChecker: ObservableObject {
     }
 
     private func fetchLatestRelease() async -> AppUpdateRelease? {
+        // The Store binary carries no update request at all (App Review
+        // Guideline 2.4.5(vii)); AppState never makes this checker there.
+        #if LABTETHER_STORE
+        return nil
+        #else
         var request = URLRequest(
             url: Self.latestReleaseAPI,
             cachePolicy: .reloadIgnoringLocalCacheData,
@@ -106,5 +111,6 @@ final class AppUpdateChecker: ObservableObject {
         guard let result = try? await fetch(request),
               (result.1 as? HTTPURLResponse)?.statusCode == 200 else { return nil }
         return AppUpdateRelease.parse(result.0)
+        #endif
     }
 }

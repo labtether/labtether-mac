@@ -96,3 +96,13 @@
 "uninstall.message" = "Se eliminarán todos los ajustes, tokens e historial y la app se cerrará.";
 "uninstall.confirm" = "Desinstalar y salir";
 "uninstall.cancel" = "Cancelar";
+
+/* Mac App Store edition */
+"store.monitoring_only" = "Solo supervisión";
+"store.local_network" = "Red local";
+"store.local_network_ask" = "macOS pregunta antes de que este Mac pueda conectar con un Hub de tu red. Elige Permitir.";
+"store.local_network_denied" = "El acceso a la red local está desactivado para %@.";
+"store.local_network_open_settings" = "Abrir Ajustes";
+"store.ca_choose" = "Elegir…";
+"store.ca_remove" = "Quitar";
+"store.ca_none" = "Ninguno";

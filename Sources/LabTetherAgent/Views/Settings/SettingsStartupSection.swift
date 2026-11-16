@@ -1,9 +1,11 @@
 import SwiftUI
 
 /// Startup and app-update preferences shown at the top of Settings › Advanced.
+/// The update toggle is in the Developer ID edition only.
 struct SettingsStartupSection: View {
     @ObservedObject var settings: AgentSettings
     @ObservedObject var status: AgentStatus
+    var edition: AppEdition = .current
 
     var body: some View {
         SettingsSection("Startup") {
@@ -12,12 +14,15 @@ struct SettingsStartupSection: View {
 
             LTToggleRow(label: "Start the agent when the app opens", isOn: $settings.autoStart)
 
-            LTToggleRow(
-                label: "Check for updates daily",
-                isOn: $settings.checkForAppUpdates,
-                detail: "\(ManagedAppUpdatePolicy.detail) Nothing is downloaded automatically."
-            )
-            .disabled(!settings.allowsSystemIntegration)
+            // The Mac App Store updates the Store edition.
+            if edition.checksForAppUpdates {
+                LTToggleRow(
+                    label: "Check for updates daily",
+                    isOn: $settings.checkForAppUpdates,
+                    detail: "\(ManagedAppUpdatePolicy.detail) Nothing is downloaded automatically."
+                )
+                .disabled(!settings.allowsSystemIntegration)
+            }
         }
     }
 

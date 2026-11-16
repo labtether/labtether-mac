@@ -8,15 +8,23 @@ CONFIGURATION="release"
 OUTPUT_DIR="${REPO_ROOT}/build"
 ADHOC_SIGN=true
 ARCHS=()
+EDITION="developer-id"
+STORE_DIR="${REPO_ROOT}/packaging/app-store"
 
 usage() {
   cat <<'USAGE'
 Usage: scripts/build-app.sh [options]
 
 Build a real LabTether Agent.app containing the Swift menu-bar host, its
-SwiftPM resources, and the Go child agent from the sibling labtether-agent repo.
+SwiftPM resources, and the child agent from the sibling labtether-agent repo.
+
+The Developer ID edition (default) bundles the Go agent in Contents/Resources.
+The Mac App Store edition (--edition store) is compiled with LABTETHER_STORE,
+bundles the Rust agent's monitoring edition in Contents/MacOS, and is signed
+ad hoc with the App Sandbox entitlements in packaging/app-store/.
 
 Options:
+  --edition developer-id|store   Which edition to build (default: developer-id)
   --configuration debug|release  Swift build configuration (default: release)
   --arch arm64|x86_64            Target one architecture; may be repeated
   --universal                    Build arm64 + x86_64 universal app
@@ -30,6 +38,8 @@ Environment:
   LABTETHER_APP_VERSION          CFBundleShortVersionString override
   LABTETHER_APP_BUILD_NUMBER     CFBundleVersion override
   LABTETHER_SWIFT_SCRATCH_PATH   External SwiftPM scratch directory
+  LABTETHER_APP_BUNDLE_ID        Store edition only: CFBundleIdentifier override
+  LABTETHER_APP_DISPLAY_NAME     Store edition only: app name override (QA copies)
 USAGE
 }
 
@@ -37,6 +47,10 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --configuration)
       CONFIGURATION="${2:?--configuration requires a value}"
+      shift 2
+      ;;
+    --edition)
+      EDITION="${2:?--edition requires a value}"
       shift 2
       ;;
     --arch)
@@ -74,6 +88,18 @@ case "${CONFIGURATION}" in
     exit 2
     ;;
 esac
+case "${EDITION}" in
+  developer-id) CHILD_TOOL=go ;;
+  store) CHILD_TOOL=cargo ;;
+  *)
+    echo "edition must be developer-id or store" >&2
+    exit 2
+    ;;
+esac
+if [[ "${EDITION}" != store && -n "${LABTETHER_APP_BUNDLE_ID:-}${LABTETHER_APP_DISPLAY_NAME:-}" ]]; then
+  echo "LABTETHER_APP_BUNDLE_ID and LABTETHER_APP_DISPLAY_NAME apply to --edition store only" >&2
+  exit 2
+fi
 
 if [[ ${#ARCHS[@]} -eq 0 ]]; then
   case "$(uname -m)" in
@@ -95,7 +121,7 @@ for arch in "${ARCHS[@]}"; do
   esac
 done
 
-for command_name in go swift plutil ditto codesign; do
+for command_name in "${CHILD_TOOL}" swift plutil ditto codesign; do
   command -v "${command_name}" >/dev/null 2>&1 || {
     echo "missing required command: ${command_name}" >&2
     exit 1
@@ -110,6 +136,10 @@ fi
 
 if [[ ! -f "${AGENT_REPO}/go.mod" || ! -d "${AGENT_REPO}/cmd/labtether-agent" ]]; then
   echo "labtether-agent checkout not found at ${AGENT_REPO}" >&2
+  exit 1
+fi
+if [[ "${EDITION}" == store && ! -f "${AGENT_REPO}/rust/Cargo.lock" ]]; then
+  echo "Rust agent not found at ${AGENT_REPO}/rust" >&2
   exit 1
 fi
 
@@ -152,6 +182,9 @@ APP_VERSION="${LABTETHER_APP_VERSION:-$(plutil -extract CFBundleShortVersionStri
 APP_BUILD_NUMBER="${LABTETHER_APP_BUILD_NUMBER:-$(plutil -extract CFBundleVersion raw "${REPO_ROOT}/Sources/LabTetherAgent/Resources/Info.plist")}"
 
 SWIFT_ARGS=(build -c "${CONFIGURATION}")
+if [[ "${EDITION}" == store ]]; then
+  SWIFT_ARGS+=(-Xswiftc -DLABTETHER_STORE)
+fi
 if [[ -n "${LABTETHER_SWIFT_SCRATCH_PATH:-}" ]]; then
   if [[ "${LABTETHER_SWIFT_SCRATCH_PATH}" != /* \
     || ! -d "${LABTETHER_SWIFT_SCRATCH_PATH}" \
@@ -178,28 +211,54 @@ if [[ ! -d "${RESOURCE_BUNDLE}" ]]; then
   exit 1
 fi
 
-GO_BINARIES=()
+CHILD_BINARIES=()
 for arch in "${ARCHS[@]}"; do
-  go_arch="${arch}"
-  if [[ "${arch}" == "x86_64" ]]; then
-    go_arch="amd64"
-  fi
   output="${TEMP_DIR}/labtether-agent-${arch}"
-  (
-    cd "${AGENT_REPO}"
-    CGO_ENABLED=0 GOOS=darwin GOARCH="${go_arch}" \
-      go build -trimpath \
-      -ldflags="-s -w -X main.version=${AGENT_VERSION}" \
-      -o "${output}" ./cmd/labtether-agent
-  )
-  GO_BINARIES+=("${output}")
+  if [[ "${EDITION}" == store ]]; then
+    # The Rust agent's macOS build is the monitoring edition: it starts no
+    # program and offers no actions. Release profile: stripped, no debug info.
+    rust_target="${arch/arm64/aarch64}-apple-darwin"
+    (
+      cd "${AGENT_REPO}/rust"
+      LABTETHER_AGENT_VERSION="${AGENT_VERSION}" \
+        cargo build --locked --release -p labtether-agent-rs --target "${rust_target}"
+    )
+    cp "${CARGO_TARGET_DIR:-${AGENT_REPO}/rust/target}/${rust_target}/release/labtether-agent-rs" "${output}"
+    # Checked here, unsigned: once signed with com.apple.security.inherit it
+    # runs only as the sandboxed app's child.
+    if [[ "$(uname -m)" == "${arch}" ]]; then
+      version_line="$(env -i PATH=/usr/bin:/bin "${output}" --version)"
+      [[ "${version_line}" == "labtether-agent-rs ${AGENT_VERSION}" ]] || {
+        echo "Rust agent version mismatch: expected ${AGENT_VERSION}, got ${version_line}" >&2
+        exit 1
+      }
+    fi
+  else
+    go_arch="${arch}"
+    if [[ "${arch}" == "x86_64" ]]; then
+      go_arch="amd64"
+    fi
+    (
+      cd "${AGENT_REPO}"
+      CGO_ENABLED=0 GOOS=darwin GOARCH="${go_arch}" \
+        go build -trimpath \
+        -ldflags="-s -w -X main.version=${AGENT_VERSION}" \
+        -o "${output}" ./cmd/labtether-agent
+    )
+  fi
+  CHILD_BINARIES+=("${output}")
 done
 
-CHILD_PATH="${APP_PATH}/Contents/Resources/labtether-agent"
-if [[ ${#GO_BINARIES[@]} -eq 1 ]]; then
-  cp "${GO_BINARIES[0]}" "${CHILD_PATH}"
+# Apple wants a sandboxed app's helper executables in Contents/MacOS.
+if [[ "${EDITION}" == store ]]; then
+  CHILD_PATH="${APP_PATH}/Contents/MacOS/labtether-agent"
 else
-  lipo -create "${GO_BINARIES[@]}" -output "${CHILD_PATH}"
+  CHILD_PATH="${APP_PATH}/Contents/Resources/labtether-agent"
+fi
+if [[ ${#CHILD_BINARIES[@]} -eq 1 ]]; then
+  cp "${CHILD_BINARIES[0]}" "${CHILD_PATH}"
+else
+  lipo -create "${CHILD_BINARIES[@]}" -output "${CHILD_PATH}"
 fi
 
 cp "${SWIFT_HOST}" "${APP_PATH}/Contents/MacOS/LabTetherAgent"
@@ -208,11 +267,30 @@ cp "${REPO_ROOT}/Sources/LabTetherAgent/Resources/Info.plist" "${APP_PATH}/Conte
 cp "${REPO_ROOT}/Sources/LabTetherAgent/Resources/AppIcon.icns" "${APP_PATH}/Contents/Resources/AppIcon.icns"
 plutil -replace CFBundleShortVersionString -string "${APP_VERSION}" "${APP_PATH}/Contents/Info.plist"
 plutil -replace CFBundleVersion -string "${APP_BUILD_NUMBER}" "${APP_PATH}/Contents/Info.plist"
+if [[ "${EDITION}" == store ]]; then
+  # The category is required for the Mac App Store; the owner may change it.
+  plutil -replace LSApplicationCategoryType -string "public.app-category.utilities" "${APP_PATH}/Contents/Info.plist"
+  if [[ -n "${LABTETHER_APP_BUNDLE_ID:-}" ]]; then
+    plutil -replace CFBundleIdentifier -string "${LABTETHER_APP_BUNDLE_ID}" "${APP_PATH}/Contents/Info.plist"
+  fi
+  if [[ -n "${LABTETHER_APP_DISPLAY_NAME:-}" ]]; then
+    plutil -replace CFBundleName -string "${LABTETHER_APP_DISPLAY_NAME}" "${APP_PATH}/Contents/Info.plist"
+    plutil -replace CFBundleDisplayName -string "${LABTETHER_APP_DISPLAY_NAME}" "${APP_PATH}/Contents/Info.plist"
+  fi
+fi
 printf 'APPL????' > "${APP_PATH}/Contents/PkgInfo"
 chmod 0755 "${APP_PATH}/Contents/MacOS/LabTetherAgent" "${CHILD_PATH}"
 xattr -cr "${APP_PATH}"
 
-if [[ "${ADHOC_SIGN}" == "true" ]]; then
+if [[ "${ADHOC_SIGN}" == "true" && "${EDITION}" == store ]]; then
+  # Ad hoc only: the agent first, with the two keys a sandboxed helper may
+  # have, then the app with the Store entitlements.
+  BUNDLE_ID="$(plutil -extract CFBundleIdentifier raw "${APP_PATH}/Contents/Info.plist")"
+  codesign --force --options runtime --sign - --identifier "${BUNDLE_ID}.agent" \
+    --entitlements "${STORE_DIR}/labtether-agent.entitlements" "${CHILD_PATH}"
+  codesign --force --options runtime --sign - \
+    --entitlements "${STORE_DIR}/LabTetherAgent.entitlements" "${APP_PATH}"
+elif [[ "${ADHOC_SIGN}" == "true" ]]; then
   codesign --force --options runtime --sign - "${CHILD_PATH}"
   codesign --force --options runtime --sign - "${APP_PATH}/Contents/MacOS/LabTetherAgent"
   codesign --force --sign - "${APP_PATH}"
@@ -221,6 +299,7 @@ fi
 ARCH_LIST="$(IFS=,; printf '%s' "${ARCHS[*]}")"
 VALIDATE_ARGS=(
   "${APP_PATH}"
+  --edition "${EDITION}"
   --architectures "${ARCH_LIST}"
   --agent-version "${AGENT_VERSION}"
 )

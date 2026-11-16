@@ -1,7 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// Version, "Update available", the ⋯ menu (About, setup, uninstall) and Quit.
+/// Version, "Update available" (Developer ID edition), the ⋯ menu (About,
+/// setup, uninstall) and Quit.
 struct MenuBarFooterSection: View {
     @ObservedObject var metadata: LocalAPIMetadataStore
     let agentProcess: AgentProcess
@@ -16,7 +17,9 @@ struct MenuBarFooterSection: View {
                 .font(LT.font(12).monospacedDigit())
                 .foregroundStyle(LT.text3)
                 .accessibilityLabel("Version \(BundleHelper.appVersion)")
-            MenuBarUpdateLink(updates: appUpdates, metadata: metadata)
+            if AppEdition.current.checksForAppUpdates {
+                MenuBarUpdateLink(updates: appUpdates, metadata: metadata)
+            }
             Spacer(minLength: LT.space8)
             LTMoreMenu(label: "More: About LabTether, Run setup again, Reset and uninstall") {
                 Button(L10n.menuAbout) {

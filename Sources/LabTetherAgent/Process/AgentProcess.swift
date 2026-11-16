@@ -111,6 +111,10 @@ final class AgentProcess: ObservableObject {
     func start(resetCrashHistory: Bool = true) {
         debugBootProcess("start called resetCrashHistory=\(resetCrashHistory) process_nil=\(process == nil) isStarting=\(isStarting)")
         guard process == nil && !isStarting else { return }
+        // Store edition: the agent's copy of a picked CA follows the file first.
+        if AppEdition.current.picksCAFileWithPanel, let line = settings.refreshPickedCACopy() {
+            logBuffer.append("[app] \(line)")
+        }
         guard hubChangeSettled(then: { [weak self] in self?.start(resetCrashHistory: resetCrashHistory) }) else { return }
         guard chosenCASettled(then: { [weak self] in self?.start(resetCrashHistory: resetCrashHistory) }) else { return }
         chosenCACheckedForThisStart = false   // every start checks again
